@@ -3,6 +3,7 @@ import datetime
 import os
 import signal
 import pickle
+import uuid
 import sys
 import traceback
 from typing import Annotated, Any, Optional
@@ -35,6 +36,9 @@ from data import (
 
 app = FastAPI(title=settings.app_name, docs_url=None, redoc_url=None, openapi_url=None)
 app.state.favour = {}
+app.state.share = {}
+
+GUEST_ACOUNT = "guest"
 
 templates = Jinja2Templates(directory="templates")
 
@@ -160,6 +164,22 @@ async def api_fund_evaluate(code: str, request: Request):
         "evaluate": evaluate,
     }
     return ret
+
+
+@app.get("/api/v1/share/{code}")
+async def api_fund_share(
+    code: str, request: Request, username: str = Depends(basic_authorization)
+):
+    """获取基金估值"""
+    now = datetime.datetime.now()
+    next_day = now + datetime.timedelta(days=1)
+
+    uuid_str = str(uuid.uuid4())
+    app.state.share[uuid_str] = {"code": code, "ddl": next_day}
+
+    ret_msg = f"分享链接为 {settings.base_url}/share/{uuid_str} ,有效期为 24 小时。"
+    response = await index(request, username, ret_msg, None)
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -303,9 +323,13 @@ async def fund_info(
 
     try:
         favour = 0
-        if username in app.state.favour and code in app.state.favour[username]:
+        if (
+            username in app.state.favour
+            and code in app.state.favour[username]
+            and username != GUEST_ACOUNT
+        ):
             favour = 2
-        else:
+        elif username != GUEST_ACOUNT:
             favour = 1
     except Exception as e:
         logging.error(f"get fund favour error: {e}")
@@ -328,6 +352,27 @@ async def fund_info(
             "favour": favour,
         },
     )
+
+
+@app.get("/share/{uuid}")
+async def fund_share(uuid: str, request: Request):
+    """获取基金估值"""
+    now = datetime.datetime.now()
+
+    try:
+        if uuid not in app.state.share:
+            return HTMLResponse("分享链接已失效", status_code=200)
+        ddl: datetime = app.state.share[uuid]["ddl"]
+        code = app.state.share[uuid]["code"]
+
+        if ddl < now:
+            return HTMLResponse("分享链接已失效", status_code=200)
+    except Exception as e:
+        logging.error(f"get share link error {e}")
+        return HTMLResponse("分享链接已失效", status_code=200)
+
+    response = await fund_info(request, code, GUEST_ACOUNT)
+    return response
 
 
 @app.post("/fund", response_class=HTMLResponse)
@@ -449,10 +494,14 @@ async def auto_store():
             logging.info(f"save state to {settings.state_db}")
             try:
                 with open(settings.state_db, "wb") as f:
-                    pickle.dump(app.state.favour, f)
+                    state = {
+                        "favour": app.state.favour,
+                        "share": app.state.share,
+                    }
+                    pickle.dump(state, f)
             except Exception as e:
                 logging.error(f"save state error: {e}")
-            await asyncio.sleep(600)
+            await asyncio.sleep(10)
 
 
 def init_state():
@@ -467,8 +516,8 @@ def init_state():
     if settings.state_db != "" and os.path.exists(settings.state_db):
         with open(settings.state_db, "rb") as f:
             state = pickle.load(f)
-            for k, v in state.items():
-                app.state.favour[k] = v
+            app.state.favour = state["favour"]
+            app.state.share = state["share"]
         logging.info(f"load state from {settings.state_db}")
 
 

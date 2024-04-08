@@ -10,9 +10,6 @@
 
         <div class="col-md-6">
             <div class="mb-3 mt-3">
-                <a type="button" class="btn btn-outline-primary" href="/">返回</a>
-
-                <a type="button" class="btn btn-outline-dark" href="/logout">退出</a>
 
                 {%if favour%}
                     {%if favour == 2%}
@@ -21,6 +18,12 @@
                     <a type="button" class="btn btn-outline-warning" href="/watch/add/{{fund['基金代码']}}">添加自选</a>
                     {%endif%}
                 {%endif%}
+
+                <a type="button" class="btn btn-outline-info" href="/api/v1/share/{{fund['基金代码']}}">分享</a>
+
+                <a type="button" class="btn btn-outline-primary" href="/">返回</a>
+
+                <a type="button" class="btn btn-outline-dark" href="/logout">退出</a>
             </div>
         </div>
     </div>
