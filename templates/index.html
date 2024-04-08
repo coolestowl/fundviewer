@@ -1,0 +1,92 @@
+{% extends 'main.html' %}
+
+{% block main %}
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-6">
+            <form action="/fund" method="post">
+                <div class="mb-3 mt-3">
+                    <div class="input-group">
+                      <input type="text" class="form-control" id="code" aria-describedby="basic-addon3" name="code" placeholder="代码">
+                      <button class="btn btn-primary" type="submit">查询</button>
+                      <a type="button" class="btn btn-outline-dark" href="/logout">退出</a>
+                    </div>
+                </div>
+            </form>
+
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-10">
+            <h3>大盘指数 ({{index_now}})</h3>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">代码</th>
+                        <th scope="col">名称</th>
+                        <th scope="col">最新价</th>
+                        <th scope="col">涨跌幅</th>
+                        <th scope="col">今开</th>
+                        <th scope="col">最低</th>
+                        <th scope="col">最高</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for idx in index %}
+                    <tr>
+                        <th scope="row">{{loop.index}}</th>
+                        <td>{{idx.code}}</td>
+                        <td>{{idx.name}}</td>
+                        <td>{{idx.price}}</td>
+                        <td style="color:{%if idx.rate >= 0%}red{%else%}green{%endif%}">{{idx.rate}}%</td>
+                        <td>{{idx.start}}</td>
+                        <td>{{idx.low}}</td>
+                        <td>{{idx.high}}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-10">
+            <h3>自选列表</h3>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th scope="col">#</th>
+                        <th scope="col">代码</th>
+                        <th scope="col">名称</th>
+                        <th scope="col">单位净值</th>
+                        <th scope="col">净值涨跌幅</th>
+                        <th scope="col">单位估值</th>
+                        <th scope="col">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for fund in favour_funds %}
+                    <tr>
+                        <th scope="row" style="vertical-align: middle">{{loop.index}}</th>
+                        <td style="vertical-align: middle">{{fund['基金代码']}}</td>
+                        <td style="vertical-align: middle">{{fund['基金名称']}}</td>
+                        <td style="vertical-align: middle">{{fund['单位净值']}} ({{fund['更新时间']}})</td>
+                        <td style="color:{%if fund['历史业绩']['日增长率'] >= 0%}red{%else%}green{%endif%}; vertical-align: middle">{{"%.2f" | format(fund['历史业绩']['日增长率'])}}% ({{fund['更新时间']}})</td>
+                        <td style="color:{%if fund['基金估值'] >= 0%}red{%else%}green{%endif%}; vertical-align: middle">{{"%.2f" | format(fund['基金估值'])}}% ({{fund['估值时间']}})</td>
+                        <td>
+                            <a type="button" class="btn btn-outline-primary btn-sm" href="/fund/{{fund['基金代码']}}">查看</a>
+                            <a type="button" class="btn btn-outline-danger btn-sm" href="/watch/del/{{fund['基金代码']}}">删除</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <p>共计 {{fund_info|length}} 项</p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

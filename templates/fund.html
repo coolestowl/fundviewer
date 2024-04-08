@@ -1,0 +1,211 @@
+{% extends 'main.html' %}
+
+{% block main %}
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-6 mb-3 mt-3">
+            <h3>{{fund['基金名称']}} ({{fund['基金代码']}})</h3>
+        </div>
+
+        <div class="col-md-6">
+            <div class="mb-3 mt-3">
+                <a type="button" class="btn btn-outline-primary" href="/">返回</a>
+
+                <a type="button" class="btn btn-outline-dark" href="/logout">退出</a>
+
+                {%if favour%}
+                    {%if favour == 2%}
+                    <a type="button" class="btn btn-outline-danger" href="/watch/del/{{fund['基金代码']}}?goback=/fund/{{fund['基金代码']}}">删除自选</a>
+                    {%elif favour == 1%}
+                    <a type="button" class="btn btn-outline-warning" href="/watch/add/{{fund['基金代码']}}">添加自选</a>
+                    {%endif%}
+                {%endif%}
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <div class="accordion">
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="panelsStayOpen-headingOne">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#panelsStayOpen-collapseOne" aria-expanded="true"
+                            aria-controls="panelsStayOpen-collapseOne">
+                            基本信息
+                        </button>
+                    </h2>
+                    <div id="panelsStayOpen-collapseOne" class="accordion-collapse collapse show"
+                        aria-labelledby="panelsStayOpen-headingOne">
+                        <div class="accordion-body">
+                            <ul class="list-group">
+                                <li class="list-group-item">代码：{{fund['基金代码']}}</li>
+                                <li class="list-group-item">类型：{{fund['基金类型']}}</li>
+                                <li class="list-group-item">基金规模：{{fund['最新规模']}}</li>
+                                <li class="list-group-item">基金经理：{{fund['基金经理']}}</li>
+                                <li class="list-group-item">基金公司：{{fund['基金公司']}}</li>
+                                <li class="list-group-item">开放购买：{{fund['开放购买']}}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="panelsStayOpen-headingTwo">
+                        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#panelsStayOpen-collapseTwo" aria-expanded="false"
+                            aria-controls="panelsStayOpen-collapseTwo">
+                            基金业绩
+                        </button>
+                    </h2>
+                    <div id="panelsStayOpen-collapseTwo" class="accordion-collapse"
+                        aria-labelledby="panelsStayOpen-headingTwo">
+                        <div class="accordion-body">
+                            <ul class="list-group">
+                                <li class="list-group-item">单位净值：{{fund['单位净值']}} ({{fund['更新时间']}})</li>
+                                <li class="list-group-item" style="color:{%if fund['历史业绩']['日增长率'] > 0%}red{%else%}green{%endif%}">日增长率：{{"%.2f" | format(fund['历史业绩']['日增长率'])}}% ({{fund['更新时间']}})</li>
+                                <li class="list-group-item" style="color:{%if evaluate >= 0%}red{%else%}green{%endif%}"><strong>当前估值：{{ "%.2f" | format(evaluate)}}% ({{now}})</strong></li>
+                            </ul>
+                        </div>
+
+                        <div class="accordion-body">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">范围</th>
+                                        <th scope="col">增长率</th>
+                                        <th scope="col">同类评分</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for key in ["日", "月", "三月", "六月", "年", "三年"] %}
+                                    <tr>
+                                        <th scope="row">{{key}}增长率</th>
+                                        <td style="color:{%if fund['历史业绩'][key+'增长率'] > 0%}red{%else%}green{%endif%}"> {{ "%.2f" | format(fund['历史业绩'][key+'增长率'])}}%</td>
+                                        <td style="color:{%if fund['历史业绩'][key+'增长率'] > 0%}red{%else%}green{%endif%}"> {{fund['历史业绩'][key+'排名']}} </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="panelsStayOpen-headingThree">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#panelsStayOpen-collapseThree" aria-expanded="false"
+                            aria-controls="panelsStayOpen-collapseThree">
+                            基金评级
+                        </button>
+                    </h2>
+                    <div id="panelsStayOpen-collapseThree" class="accordion-collapse collapse"
+                        aria-labelledby="panelsStayOpen-headingThree">
+                        <div class="accordion-body">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">评级机构</th>
+                                        <th scope="col">评分</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for rank in rank_list %}
+                                    <tr>
+                                        <th scope="row">{{loop.index}}</th>
+                                        <td>{{rank['评级机构']}}</td>
+                                        <td>{{rank['评级分数']}}</td>
+                                    </tr>
+                                    {% endfor %}
+                                    <tr>
+                                        <th scope="row">综合</th>
+                                        <td></td>
+                                        <td style="color: red">{{"%.2f" | format(avg_score)}}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="panelsStayOpen-headingFour">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                            data-bs-target="#panelsStayOpen-collapseFour" aria-expanded="false"
+                            aria-controls="panelsStayOpen-collapseFour">
+                            基金持仓
+                        </button>
+                    </h2>
+                    <div id="panelsStayOpen-collapseFour" class="accordion-collapse collapse"
+                        aria-labelledby="panelsStayOpen-headingFour">
+                        <div class="accordion-body">
+                            <p><strong>股票占比：{{"%.2f" | format(fund['持有股票占比'])}}% 债券占比：{{"%.2f" | format(fund['持有债券占比'])}}% 其他资产：{{"%.2f" | format(100 - fund['持有债券占比'] - fund['持有股票占比'])}}%</strong></p>
+                            <p><strong>{% if stock_season %}{{stock_season}} {%else%}股票持仓{%endif%}</strong></p>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">股票代码</th>
+                                        <th scope="col">股票名称</th>
+                                        <th scope="col">股票占比(%)</th>
+                                        <th scope="col">实时增长率(%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for s in fund['持有股票']%}
+                                    <tr>
+                                        <th scope="row">{{loop.index}}</th>
+                                        <td>{{s["code"]}}</td>
+                                        <td>{{s["name"]}}</td>
+                                        <td>{{"%.2f" | format(s["share"])}}%</td>
+                                        <td style="color:{%if detailed_price['stock'][s['code']] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price['stock'][s['code']])}}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                    <tr>
+                                        <th scope="row">合计</th>
+                                        <td></td>
+                                        <td></td>
+                                        <td style="color:{%if detailed_price['stock']['avg'] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(stock_show_total)}}%</td>
+                                        <td style="color:{%if detailed_price['stock']['avg'] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price["stock"]["avg"])}}% </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <strong>{% if bond_season %}{{bond_season}}{%else%}债券持仓{%endif%}</strong>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">#</th>
+                                        <th scope="col">债券代码</th>
+                                        <th scope="col">债券名称</th>
+                                        <th scope="col">债券占比(%)</th>
+                                        <th scope="col">实时增长率(%)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for s in fund['持有债券']%}
+                                    <tr>
+                                        <th scope="row">{{loop.index}}</th>
+                                        <td>{{s['code']}}</td>
+                                        <td>{{s['name']}}</td>
+                                        <td>{{"%.2f" | format(s["share"])}}%</td>
+                                        <td style="color:{%if detailed_price['bond'][s['code']] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price['bond'][s['code']])}}%</td>
+                                    </tr>
+                                    {% endfor %}
+                                    <tr>
+                                        <th scope="row">合计</th>
+                                        <td></td>
+                                        <td></td>
+                                        <td style="color:{%if detailed_price['bond']['avg'] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(bond_show_total)}} </td>
+                                        <td style="color:{%if detailed_price['bond']['avg'] > 0%}red{%else%}green{%endif%}">{{ "%.2f" | format(detailed_price["bond"]["avg"])}}% </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
