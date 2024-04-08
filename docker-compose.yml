@@ -9,8 +9,11 @@ services:
       - 127.0.0.1:8600:8600
     volumes:
       - /etc/localtime:/etc/localtime:ro
+      - ./data:/app/data
     environment:
       host: 0.0.0.0
       port: 8600
       users: admin:admin
       max_favour: 10
+      base_url: http://127.0.0.1:8600
+      state_db: /app/data/state.db

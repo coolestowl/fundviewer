@@ -1,6 +1,8 @@
 import asyncio
+import datetime
 import os
 import signal
+import pickle
 import sys
 import traceback
 from typing import Annotated, Any, Optional
@@ -13,11 +15,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 import uvicorn
+from aakshare import get_fund_share
 from config import settings
 import logging
 
 from data import (
+    CACHE_PERIOD_DAY_1,
+    get_fund_hold_bond,
+    get_fund_hold_stack,
     get_fund_info,
+    get_fund_info_xq,
+    get_fund_rate,
     get_index,
     get_index_new,
     get_rt_evaluation,
@@ -39,8 +47,8 @@ def urlx_for(
 ) -> str:
     request: Request = context["request"]
     http_url = request.url_for(name, **path_params)
-    if scheme := request.headers.get("x-forwarded-proto"):
-        return http_url.replace(scheme=scheme)
+    if "https" in settings.base_url:
+        return http_url.replace(scheme="https")
     return http_url
 
 
@@ -170,7 +178,7 @@ async def index(
         raise HTTPException(400, detail="get index error")
 
     if username not in app.state.favour:
-        app.state.favour[username] = []
+        app.state.favour[username] = settings.favour_init.copy()
 
     favour_list = app.state.favour[username]
 
@@ -240,7 +248,7 @@ async def fund_info(
         response = await index(
             request, username, None, f"获取基金{code}估值失败，请稍后重试"
         )
-        raise response
+        return response
 
     rank_list = []
     score_list = []
@@ -341,7 +349,7 @@ async def watch_add(
     request: Request, code: str, username: str = Depends(basic_authorization)
 ):
     if username not in app.state.favour:
-        app.state.favour[username] = []
+        app.state.favour[username] = settings.favour_init.copy()
     if code not in app.state.favour[username]:
         if len(app.state.favour[username]) >= settings.max_favour:
             logging.info(f"add favour fund failed for {username}: {code}")
@@ -364,7 +372,7 @@ async def watch_del(
     username: str = Depends(basic_authorization),
 ):
     if username not in app.state.favour:
-        app.state.favour[username] = []
+        app.state.favour[username] = settings.favour_init.copy()
     if code in app.state.favour[username]:
         logging.info(f"delete favour fund for {username}: {code}")
         app.state.favour[username].remove(code)
@@ -378,6 +386,90 @@ async def watch_del(
 
     response = RedirectResponse(url=goback)
     return response
+
+
+async def daily_refresh():
+    await asyncio.sleep(15)
+    logging.info("enable daily update")
+    while True:
+        now = datetime.datetime.now()
+        today = now.strftime("%Y-%m-%d %H:%M:%S")
+        logging.info(f"daily update for {today}")
+
+        try:
+            fund_list = []
+            for username in app.state.favour:
+                for code in app.state.favour[username]:
+                    if code not in fund_list:
+                        fund_list.append(code)
+
+            sem = asyncio.Semaphore(5)
+
+            async def update_one(code: str):
+                async with sem:
+                    try:
+                        future_basic = get_fund_info_xq(code=code)
+                        future_rate = get_fund_rate(code)
+                        future_hold_stock = get_fund_hold_stack(code)
+                        future_hold_bond = get_fund_hold_bond(code)
+                        future_share = get_fund_share(code)
+
+                        await asyncio.gather(
+                            future_basic,
+                            future_rate,
+                            future_hold_stock,
+                            future_hold_bond,
+                            future_share,
+                        )
+                        logging.info(f"pre-reload success for fund {code}")
+                    except Exception as e:
+                        logging.error(f"pre-reload failed for fund {code}: {e}")
+
+            tasks = [update_one(code) for code in fund_list]
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            logging.error(f"daily update error: {e}")
+
+        try:
+            next = now + datetime.timedelta(days=1)
+            next = next.replace(hour=22, minute=59, second=59)
+            diff_sec = (next - now).total_seconds()
+        except Exception as e:
+            logging.error(f"daily update error: {e}")
+            diff_sec = CACHE_PERIOD_DAY_1
+        logging.info(f"daily update finished, next update: {next}")
+        await asyncio.sleep(diff_sec)
+
+
+async def auto_store():
+    if settings.state_db != "":
+        await asyncio.sleep(30)
+        logging.info("enable auto store")
+        while True:
+            logging.info(f"save state to {settings.state_db}")
+            try:
+                with open(settings.state_db, "wb") as f:
+                    pickle.dump(app.state.favour, f)
+            except Exception as e:
+                logging.error(f"save state error: {e}")
+            await asyncio.sleep(600)
+
+
+def init_state():
+    for up in settings.users.split(","):
+        try:
+            u, _ = up.split(":")
+            app.state.favour[u] = settings.favour_init.copy()
+        except:
+            logging.error(f"Invalid user format: {up}")
+            sys.exit(1)
+
+    if settings.state_db != "" and os.path.exists(settings.state_db):
+        with open(settings.state_db, "rb") as f:
+            state = pickle.load(f)
+            for k, v in state.items():
+                app.state.favour[k] = v
+        logging.info(f"load state from {settings.state_db}")
 
 
 if __name__ == "__main__":
@@ -396,6 +488,8 @@ if __name__ == "__main__":
 
     cwd = os.getcwd()
 
+    init_state()
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     config = uvicorn.Config(
@@ -411,5 +505,7 @@ if __name__ == "__main__":
     server = uvicorn.Server(config=config)
 
     srv_f = server.serve()
+    update_f = daily_refresh()
+    store_f = auto_store()
 
-    loop.run_until_complete(asyncio.gather(srv_f))
+    loop.run_until_complete(asyncio.gather(srv_f, update_f, store_f))

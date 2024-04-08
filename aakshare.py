@@ -282,22 +282,20 @@ async def fund_individual_basic_info_xq(
         ret["基金评级"] = {json_data["rating_source"]: score_int}
 
     price_history: Dict[str, Any] = json_data.get("fund_derived", {})
-    ret["单位净值"] = price_history.get("unit_nav", None)
+    ret["单位净值"] = float(price_history.get("unit_nav", None))
     ret["更新时间"] = price_history.get("end_date", None)
-    ret["历史业绩"]["日增长率"] = price_history.get("nav_grtd", None)
-    ret["历史业绩"]["月增长率"] = price_history.get("nav_grl1m", None)
-    ret["历史业绩"]["三月增长率"] = price_history.get("nav_grl3m", None)
-    ret["历史业绩"]["六月增长率"] = price_history.get("nav_grl6m", None)
-    ret["历史业绩"]["年增长率"] = price_history.get("nav_grl1y", None)
-    ret["历史业绩"]["三年增长率"] = price_history.get("nav_grl3y", None)
+    ret["历史业绩"]["日增长率"] = float(price_history.get("nav_grtd", None))
+    ret["历史业绩"]["月增长率"] = float(price_history.get("nav_grl1m", None))
+    ret["历史业绩"]["三月增长率"] = float(price_history.get("nav_grl3m", None))
+    ret["历史业绩"]["六月增长率"] = float(price_history.get("nav_grl6m", None))
+    ret["历史业绩"]["年增长率"] = float(price_history.get("nav_grl1y", None))
+    ret["历史业绩"]["三年增长率"] = float(price_history.get("nav_grl3y", None))
 
     ret["历史业绩"]["月排名"] = price_history.get("srank_l1m", None)
     ret["历史业绩"]["三月排名"] = price_history.get("srank_l3m", None)
     ret["历史业绩"]["六月排名"] = price_history.get("srank_l6m", None)
     ret["历史业绩"]["年排名"] = price_history.get("srank_l1y", None)
     ret["历史业绩"]["三年排名"] = price_history.get("srank_l3y", None)
-
-    opfund: Dict[str, Any] = json_data.get("op_fund", {})
 
     return ret
 
@@ -1183,3 +1181,73 @@ async def bond_cov_comparison() -> pd.DataFrame:
         ]
     ]
     return temp_df
+
+
+async def fund_open_fund_daily_em() -> pd.DataFrame:
+    """
+    东方财富网-天天基金网-基金数据-开放式基金净值
+    https://fund.eastmoney.com/fund.html#os_0;isall_0;ft_;pt_1
+    :return: 当前交易日的所有开放式基金净值数据
+    :rtype: pandas.DataFrame
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
+    }
+    url = "http://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx"
+    params = {
+        "t": "1",
+        "lx": "1",
+        "letter": "",
+        "gsid": "",
+        "text": "",
+        "sort": "zdf,desc",
+        "page": "1,20000",
+        "dt": "1580914040623",
+        "atfc": "",
+        "onlySale": "0",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        res = await client.get(url, params=params, headers=headers)
+    text_data = res.text
+    data_json = demjson.decode(text_data.strip("var db="))
+    temp_df = pd.DataFrame(data_json["datas"])
+    show_day = data_json["showday"]
+    temp_df.columns = [
+        "基金代码",
+        "基金简称",
+        "-",
+        f"{show_day[0]}-单位净值",
+        f"{show_day[0]}-累计净值",
+        f"{show_day[1]}-单位净值",
+        f"{show_day[1]}-累计净值",
+        "日增长值",
+        "日增长率",
+        "申购状态",
+        "赎回状态",
+        "-",
+        "-",
+        "-",
+        "-",
+        "-",
+        "-",
+        "手续费",
+        "-",
+        "-",
+        "-",
+    ]
+    data_df = temp_df[
+        [
+            "基金代码",
+            "基金简称",
+            f"{show_day[0]}-单位净值",
+            f"{show_day[0]}-累计净值",
+            f"{show_day[1]}-单位净值",
+            f"{show_day[1]}-累计净值",
+            "日增长值",
+            "日增长率",
+            "申购状态",
+            "赎回状态",
+            "手续费",
+        ]
+    ]
+    return data_df

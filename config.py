@@ -1,5 +1,4 @@
 from typing import List
-from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -9,6 +8,9 @@ class Settings(BaseSettings):
     port: int = 8600
     users: str = "admin:admin"
     max_favour: int = 10
+    base_url: str = "http://127.0.0.1:8600"
+    favour_init: List[str] = ["004703"]
+    state_db: str = "state.db"
 
 
 settings = Settings()

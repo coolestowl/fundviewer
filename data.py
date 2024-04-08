@@ -1,14 +1,15 @@
 import asyncio
 import datetime
 import traceback
+from typing import Dict
 
 import pandas as pd
-from config import settings
 from cache import AsyncTTL
 import aakshare as aak
 import logging
 
 CACHE_PERIOD_MIN_3 = 180
+CACHE_PERIOD_HOUR_1 = 3600
 CACHE_PERIOD_HOUR_2 = 7200
 CACHE_PERIOD_DAY_1 = 86400
 CACHE_PERIOD_DAY_15 = 86400 * 15
@@ -47,9 +48,7 @@ async def get_index_new():
     sh_index, sz_index, zz_index = await asyncio.gather(sh_future, sz_future, zz_future)
 
     all_index = pd.concat([sh_index, sz_index, zz_index])
-    print(all_index, all_index.shape)
     for code in ["000001", "000300", "000016", "399006", "000906"]:
-        print(code)
         row = all_index[all_index["代码"] == code].iloc[0]
         tmp_index.append(
             {
@@ -110,7 +109,7 @@ async def get_fund_hold_stack(code: str):
 
         result = []
         for _, row in fund_portfolio_hold_em_df.iterrows():
-            if row["占净值比例"] <= 0 or len(result) >= 50:
+            if row["占净值比例"] <= 0:
                 continue
             result.append(
                 {
@@ -152,7 +151,7 @@ async def get_fund_hold_bond(code: str):
 
         result = []
         for _, row in fund_portfolio_bond_hold_em.iterrows():
-            if row["占净值比例"] <= 0 or len(result) >= 50:
+            if row["占净值比例"] <= 0:
                 continue
             result.append(
                 {
@@ -170,17 +169,65 @@ async def get_fund_hold_bond(code: str):
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_2, maxsize=1024)
+async def get_fund_unit_price() -> Dict[str, float]:
+    logging.info(f"getting fund unit price")
+    today = datetime.date.today()
+
+    fund_unit_price = await aak.fund_open_fund_daily_em()
+    today_key = today.strftime("%Y-%m-%d") + "-单位净值"
+    if today_key not in fund_unit_price.columns:
+        return {}
+
+    fund_unit_price = fund_unit_price[["基金代码", today_key, "日增长率"]]
+
+    unit_price_dict = {}
+    for _, row in fund_unit_price.iterrows():
+        code = row["基金代码"]
+        price = row[today_key]
+        rate = row["日增长率"]
+        if price == "" or rate == "":
+            continue
+        try:
+            price = float(price)
+            rate = float(rate)
+            unit_price_dict[code] = {"price": price, "rate": rate}
+        except Exception:
+            continue
+    return unit_price_dict
+
+
+@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+async def get_fund_share(code: str):
+    ret = await aak.get_fund_share(code)
+    return ret
+
+
+@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
+async def get_fund_info_xq(code: str):
+    ret = await aak.fund_individual_basic_info_xq(symbol=code)
+    return ret
+
+
+@AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
 async def get_fund_info(code: str):
     logging.info(f"getting fund info for {code}")
 
-    future_basic = aak.fund_individual_basic_info_xq(symbol=code)
+    future_basic = get_fund_info_xq(code=code)
     future_rate = get_fund_rate(code)
     future_hold_stock = get_fund_hold_stack(code)
     future_hold_bond = get_fund_hold_bond(code)
-    future_share = aak.get_fund_share(code)
+    future_share = get_fund_share(code)
+    future_recent_price = get_fund_unit_price()
 
-    basic_ret, rate_ret, stock_ret, bond_ret, fund_share_ret = await asyncio.gather(
-        future_basic, future_rate, future_hold_stock, future_hold_bond, future_share
+    basic_ret, rate_ret, stock_ret, bond_ret, fund_share_ret, recent_price_ret = (
+        await asyncio.gather(
+            future_basic,
+            future_rate,
+            future_hold_stock,
+            future_hold_bond,
+            future_share,
+            future_recent_price,
+        )
     )
 
     basic_ret["基金评级"].update(rate_ret)
@@ -204,6 +251,16 @@ async def get_fund_info(code: str):
         )
     else:
         basic_ret["持有债券占比"] = 0
+
+    today = datetime.date.today()
+    today_str = today.strftime("%Y-%m-%d")
+    if code in recent_price_ret:
+        logging.info(
+            f"update recent unit price for {code}: {recent_price_ret[code]['price']} {recent_price_ret[code]['rate']}"
+        )
+        basic_ret["单位净值"] = recent_price_ret[code]["price"]
+        basic_ret["历史业绩"]["日增长率"] = recent_price_ret[code]["rate"]
+        basic_ret["更新时间"] = today_str
 
     return basic_ret
 
