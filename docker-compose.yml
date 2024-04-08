@@ -1,0 +1,16 @@
+version: '3.7'
+
+services:
+  fundviewer:
+    image: ghcr.io/ertuil/fundviewer:latest
+    command: ["python", "main.py"]
+    restart: always
+    ports:
+      - 127.0.0.1:8600:8600
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      host: 0.0.0.0
+      port: 8600
+      users: admin:admin
+      max_favour: 10

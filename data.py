@@ -5,7 +5,6 @@ import traceback
 import pandas as pd
 from config import settings
 from cache import AsyncTTL
-import akshare as ak
 import aakshare as aak
 import logging
 

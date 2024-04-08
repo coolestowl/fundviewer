@@ -3,7 +3,7 @@ import os
 import signal
 import sys
 import traceback
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -11,6 +11,7 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 import uvicorn
 from config import settings
 import logging
@@ -28,6 +29,24 @@ app = FastAPI(title=settings.app_name, docs_url=None, redoc_url=None, openapi_ur
 app.state.favour = {}
 
 templates = Jinja2Templates(directory="templates")
+
+
+@pass_context
+def urlx_for(
+    context: dict,
+    name: str,
+    **path_params: Any,
+) -> str:
+    request: Request = context["request"]
+    http_url = request.url_for(name, **path_params)
+    if scheme := request.headers.get("x-forwarded-proto"):
+        return http_url.replace(scheme=scheme)
+    return http_url
+
+
+templates.env.globals["url_for"] = urlx_for
+
+
 basic_auth = HTTPBasic()
 
 
@@ -210,11 +229,18 @@ async def fund_info(
         response = await index(request, username, None, "基金代码为空")
         return response
 
+    if len(code) != 6 or not code.isdigit():
+        response = await index(request, username, None, "基金代码格式错误")
+        return response
+
     try:
         now, fund_info, evaluate, detailed_price = await get_rt_evaluation(code=code)
     except Exception as e:
         logging.error(f"get fund evaluation error: {e}")
-        raise HTTPException(400, detail="get fund evaluation error")
+        response = await index(
+            request, username, None, f"获取基金{code}估值失败，请稍后重试"
+        )
+        raise response
 
     rank_list = []
     score_list = []
