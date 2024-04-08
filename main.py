@@ -37,12 +37,15 @@ from data import (
 app = FastAPI(title=settings.app_name, docs_url=None, redoc_url=None, openapi_url=None)
 app.state.favour = {}
 app.state.share = {}
+app.state.fail_login = {}
+app.state.banip = []
 
 GUEST_ACOUNT = "guest"
 
 templates = Jinja2Templates(directory="templates")
 
 
+# 通过识别base_url中的协议，决定静态文件的协议类型
 @pass_context
 def urlx_for(
     context: dict,
@@ -65,6 +68,12 @@ basic_auth = HTTPBasic()
 async def basic_authorization(
     credentials: Annotated[HTTPBasicCredentials, Depends(basic_auth)], request: Request
 ) -> str:
+    """Basic Authorization"""
+    remote_host = request.client.host
+    if remote_host in app.state.banip:
+        logging.error(f"Login failed. Banned IP: {remote_host}")
+        raise HTTPException(status_code=401, detail="Unauthorized user")
+
     username = credentials.username
     password = credentials.password
 
@@ -82,7 +91,14 @@ async def basic_authorization(
     logging.error(
         f"Login failed. IP: {request.client.host} Username: {credentials.username}"
     )
-    raise HTTPException(status_code=401, detail="Unauthorized token")
+    if remote_host not in app.state.fail_login:
+        app.state.fail_login[remote_host] = 1
+    else:
+        app.state.fail_login[remote_host] += 1
+    if app.state.fail_login[remote_host] >= 5:
+        app.state.banip.append(remote_host)
+        logging.error(f"New Banned IP: {remote_host}")
+    raise HTTPException(status_code=401, detail="Unauthorized user")
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -90,16 +106,19 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/health")
 async def health():
+    """网站状态接口"""
     return {"status": "ok"}
 
 
 @app.get("/docs", dependencies=[Depends(basic_authorization)])
 async def get_documentation():
+    """文档地址"""
     return get_swagger_ui_html(openapi_url="/openapi.json", title="docs")
 
 
 @app.get("/openapi.json", dependencies=[Depends(basic_authorization)])
 async def openapi():
+    """获取openapi接口"""
     return get_openapi(title=settings.app_name, version="0.1.0", routes=app.routes)
 
 
@@ -393,6 +412,7 @@ async def fund_info_post(
 async def watch_add(
     request: Request, code: str, username: str = Depends(basic_authorization)
 ):
+    """添加关注基金"""
     if username not in app.state.favour:
         app.state.favour[username] = settings.favour_init.copy()
     if code not in app.state.favour[username]:
@@ -416,6 +436,7 @@ async def watch_del(
     goback: Optional[str] = None,
     username: str = Depends(basic_authorization),
 ):
+    """删除关注基金"""
     if username not in app.state.favour:
         app.state.favour[username] = settings.favour_init.copy()
     if code in app.state.favour[username]:
@@ -434,6 +455,7 @@ async def watch_del(
 
 
 async def daily_refresh():
+    """每日11点定时任务，用于预缓存被关注的基金信息，并清理ban_ip"""
     await asyncio.sleep(15)
     logging.info("enable daily update")
     while True:
@@ -475,6 +497,10 @@ async def daily_refresh():
         except Exception as e:
             logging.error(f"daily update error: {e}")
 
+        logging.info(f"fresh banned ip successful")
+        app.state.fail_login = {}
+        app.state.banip = []
+
         try:
             next = now + datetime.timedelta(days=1)
             next = next.replace(hour=22, minute=59, second=59)
@@ -487,8 +513,11 @@ async def daily_refresh():
 
 
 async def auto_store():
+    """定时任务，每十分钟保存应用状态"""
+    INIT_AUTO_STORE_DELAY = 30
+    AUTO_STORE_PERIOD = 300
     if settings.state_db != "":
-        await asyncio.sleep(30)
+        await asyncio.sleep(INIT_AUTO_STORE_DELAY)
         logging.info("enable auto store")
         while True:
             logging.info(f"save state to {settings.state_db}")
@@ -501,10 +530,11 @@ async def auto_store():
                     pickle.dump(state, f)
             except Exception as e:
                 logging.error(f"save state error: {e}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(AUTO_STORE_PERIOD)
 
 
 def init_state():
+    """初始化应用状态"""
     for up in settings.users.split(","):
         try:
             u, _ = up.split(":")

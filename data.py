@@ -14,11 +14,25 @@ CACHE_PERIOD_HOUR_2 = 7200
 CACHE_PERIOD_DAY_1 = 86400
 CACHE_PERIOD_DAY_15 = 86400 * 15
 
+night_cache = {}
+
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1)
 async def get_index():
+    """获取最新的指数信息（交易时间更新）"""
     now = datetime.datetime.now()
     logging.info(f"getting index for {now}")
+
+    if now.hour >= 15 or now.hour < 9:
+        ret = night_cache.get("index", None)
+        if ret is not None:
+            logging.info(f"get index from long-term cache at {now}")
+            return ret
+    try:
+        night_cache.pop("index")
+    except KeyError:
+        pass
+
     tmp_index = []
     stock_zh_index_spot_df = await aak.stock_zh_index_spot_sina()
     for code in ["sh000001", "sh000300", "sh000016", "sz399006"]:
@@ -32,13 +46,28 @@ async def get_index():
             }
         )
 
+    if now.hour >= 15 or now.hour < 9:
+        night_cache["index"] = (now, tmp_index.copy())
+
     return now, tmp_index
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1)
 async def get_index_new():
+    """获取最新的指数信息（交易时间更新，使用东方财富版本）"""
     now = datetime.datetime.now()
     logging.info(f"getting index for {now}")
+
+    if now.hour >= 15 or now.hour < 9:
+        ret = night_cache.get("index_new", None)
+        if ret is not None:
+            logging.info(f"get index from long-term cache at {now}")
+            return ret
+    try:
+        night_cache.pop("index_new")
+    except KeyError:
+        pass
+
     tmp_index = []
 
     sh_future = aak.stock_zh_index_spot_em("上证系列指数")
@@ -62,11 +91,15 @@ async def get_index_new():
             }
         )
 
+    if now.hour >= 15 or now.hour < 9:
+        night_cache["index_new"] = (now, tmp_index.copy())
+
     return now, tmp_index
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1)
 async def get_fund_rate(code: str):
+    """获得基金的评级信息"""
     logging.info(f"getting fund rate for code {code}")
     fund_ratio = await aak.fund_rating_all()
     selected_fund = fund_ratio[fund_ratio.代码 == code]
@@ -85,6 +118,7 @@ async def get_fund_rate(code: str):
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
 async def get_fund_hold_stack(code: str):
+    """获得基金的持仓股票信息"""
     logging.info(f"getting fund hold stack for {code}")
     today = datetime.date.today()
 
@@ -128,6 +162,7 @@ async def get_fund_hold_stack(code: str):
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
 async def get_fund_hold_bond(code: str):
+    """获得基金的持仓债券信息"""
     logging.info(f"getting fund hold bond for {code}")
     today = datetime.date.today()
     try:
@@ -170,7 +205,20 @@ async def get_fund_hold_bond(code: str):
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_2, maxsize=1024)
 async def get_fund_unit_price() -> Dict[str, float]:
+    """获取基金的最新单位净值信息（每天3点以后开始更新）"""
     logging.info(f"getting fund unit price")
+
+    now = datetime.datetime.now()
+    if now.hour >= 0 and now.hour < 15:
+        if night_cache.get("unit_price", None) is not None:
+            logging.info(f"get funds' unit price from long-term cache at {now}")
+            return night_cache["unit_price"]
+
+    try:
+        night_cache.pop("unit_price")
+    except KeyError:
+        pass
+
     today = datetime.date.today()
 
     fund_unit_price = await aak.fund_open_fund_daily_em()
@@ -193,23 +241,30 @@ async def get_fund_unit_price() -> Dict[str, float]:
             unit_price_dict[code] = {"price": price, "rate": rate}
         except Exception:
             continue
+
+    if now.hour >= 0 and now.hour < 15:
+        night_cache["unit_price"] = unit_price_dict.copy()
+
     return unit_price_dict
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
 async def get_fund_share(code: str):
+    """获取基金的持有股票和债券占比信息（15天更新）"""
     ret = await aak.get_fund_share(code)
     return ret
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
 async def get_fund_info_xq(code: str):
+    """获取基金的基本信息（来源雪球网，每天更新）"""
     ret = await aak.fund_individual_basic_info_xq(symbol=code)
     return ret
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
 async def get_fund_info(code: str):
+    """汇总获得完整的基金信息"""
     logging.info(f"getting fund info for {code}")
 
     future_basic = get_fund_info_xq(code=code)
@@ -267,8 +322,20 @@ async def get_fund_info(code: str):
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=10)
 async def get_rt_factor():
+    """获得实时的股票、债券信息（交易时间更新）"""
     now = datetime.datetime.now()
     logging.info(f"getting realtime price at {now}")
+
+    if now.hour >= 15 or now.hour < 9:
+        ret = night_cache.get("rt_factor", None)
+        if ret is not None:
+            logging.info(f"get realtime price from long-term cache at {now}")
+            return ret
+    try:
+        night_cache.pop("rt_factor")
+    except KeyError:
+        pass
+
     future_a_stock = aak.stock_zh_a_spot_em()
     future_h_stock = aak.stock_hk_spot_em()
     future_m_stock = aak.stock_us_spot_em()
@@ -332,11 +399,21 @@ async def get_rt_factor():
             continue
         bond_index[code] = rate
         bond_index[name] = rate
+
+    if now.hour >= 15 or now.hour < 9:
+        night_cache["rt_factor"] = (
+            now,
+            a_stocks.copy(),
+            h_stocks.copy(),
+            m_stocks.copy(),
+            bond_index.copy(),
+        )
     return now, a_stocks, h_stocks, m_stocks, bond_index
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1024)
 async def get_rt_evaluation(code: str):
+    """计算基金的实时估值"""
     fund_info_future = get_fund_info(code)
     rt_factor_facture = get_rt_factor()
 
