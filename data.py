@@ -124,12 +124,16 @@ async def get_fund_hold_stack(code: str):
 
     try:
         year = today.year
-        fund_portfolio_hold_em_df = await aak.fund_portfolio_hold_em(
-            symbol=code, date=f"{year}"
-        )
-        if len(fund_portfolio_hold_em_df) == 0:
+        ### 如何是前4个月，那么调整一下范围
+        month = today.month
+        if month <= 4:
+            a1 = aak.fund_portfolio_hold_em(symbol=code, date=f"{year}")
+            a2 = aak.fund_portfolio_hold_em(symbol=code, date=f"{year-1}")
+            ret1, ret2 = await asyncio.gather(a1, a2)
+            fund_portfolio_hold_em_df = pd.concat([ret1, ret2])
+        else:
             fund_portfolio_hold_em_df = await aak.fund_portfolio_hold_em(
-                symbol=code, date=f"{year-1}"
+                symbol=code, date=f"{year}"
             )
         if len(fund_portfolio_hold_em_df) == 0:
             return []
@@ -167,12 +171,16 @@ async def get_fund_hold_bond(code: str):
     today = datetime.date.today()
     try:
         year = today.year
-        fund_portfolio_bond_hold_em = await aak.fund_portfolio_bond_hold_em(
-            symbol=code, date=f"{year}"
-        )
-        if len(fund_portfolio_bond_hold_em) == 0:
+        ### 如何是前4个月，那么调整一下范围
+        month = today.month
+        if month <= 4:
+            a1 = aak.fund_portfolio_bond_hold_em(symbol=code, date=f"{year}")
+            a2 = aak.fund_portfolio_bond_hold_em(symbol=code, date=f"{year-1}")
+            ret1, ret2 = await asyncio.gather(a1, a2)
+            fund_portfolio_bond_hold_em = pd.concat([ret1, ret2])
+        else:
             fund_portfolio_bond_hold_em = await aak.fund_portfolio_bond_hold_em(
-                symbol=code, date=f"{year-1}"
+                symbol=code, date=f"{year}"
             )
         if len(fund_portfolio_bond_hold_em) == 0:
             return []
@@ -320,6 +328,9 @@ async def get_fund_info(code: str):
     return basic_ret
 
 
+rt_factor_sem = asyncio.Semaphore(1)
+
+
 @AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=10)
 async def get_rt_factor():
     """获得实时的股票、债券信息（交易时间更新）"""
@@ -336,78 +347,98 @@ async def get_rt_factor():
     except KeyError:
         pass
 
-    future_a_stock = aak.stock_zh_a_spot_em()
-    future_h_stock = aak.stock_hk_spot_em()
-    future_m_stock = aak.stock_us_spot_em()
-    future_bond_normal_index = aak.bond_new_composite_index_cbond(
-        indicator="财富", period="总值"
-    )
-    future_cb_index = aak.bond_cb_index_jsl()
-    future_cb = aak.bond_cov_comparison()
+    async with rt_factor_sem:
+        ret = night_cache.get("rt_factor_daily", None)
+        if ret is not None:
+            cache_time, a_stocks, h_stocks, m_stocks, bond_index = ret
+            if (now - cache_time).seconds <= CACHE_PERIOD_MIN_3:
+                logging.info(f"get realtime price from daily long-term cache at {now}")
+                return ret
+        try:
+            night_cache.pop("rt_factor_daily")
+        except KeyError:
+            pass
 
-    (
-        a_stock_ret,
-        h_stock_ret,
-        m_stock_ret,
-        bond_normal_index_ret,
-        bond_cb_index_ret,
-        bond_cb_ret,
-    ) = await asyncio.gather(
-        future_a_stock,
-        future_h_stock,
-        future_m_stock,
-        future_bond_normal_index,
-        future_cb_index,
-        future_cb,
-    )
+        future_a_stock = aak.stock_zh_a_spot_em()
+        future_h_stock = aak.stock_hk_spot_em()
+        future_m_stock = aak.stock_us_spot_em()
+        future_bond_normal_index = aak.bond_new_composite_index_cbond(
+            indicator="财富", period="总值"
+        )
+        future_cb_index = aak.bond_cb_index_jsl()
+        future_cb = aak.bond_cov_comparison()
 
-    a_stocks = {}
-    for _, row in a_stock_ret.iterrows():
-        if pd.isna(row["涨跌幅"]):
-            continue
-        a_stocks[row["代码"]] = row["涨跌幅"]
+        (
+            a_stock_ret,
+            h_stock_ret,
+            m_stock_ret,
+            bond_normal_index_ret,
+            bond_cb_index_ret,
+            bond_cb_ret,
+        ) = await asyncio.gather(
+            future_a_stock,
+            future_h_stock,
+            future_m_stock,
+            future_bond_normal_index,
+            future_cb_index,
+            future_cb,
+        )
 
-    h_stocks = {}
-    for _, row in h_stock_ret.iterrows():
-        if pd.isna(row["涨跌幅"]):
-            continue
-        h_stocks[row["代码"]] = row["涨跌幅"]
+        a_stocks = {}
+        for _, row in a_stock_ret.iterrows():
+            if pd.isna(row["涨跌幅"]):
+                continue
+            a_stocks[row["代码"]] = row["涨跌幅"]
 
-    m_stocks = {}
-    for _, row in m_stock_ret.iterrows():
-        if pd.isna(row["涨跌幅"]):
-            continue
-        code = row["代码"]
-        if "." in code:
-            code = code.split(".")[1]
-        m_stocks[code] = row["涨跌幅"]
+        h_stocks = {}
+        for _, row in h_stock_ret.iterrows():
+            if pd.isna(row["涨跌幅"]):
+                continue
+            h_stocks[row["代码"]] = row["涨跌幅"]
 
-    bond_index = {}
-    start_price = bond_normal_index_ret.iloc[-2]["value"]
-    end_price = bond_normal_index_ret.iloc[-1]["value"]
-    bond_rate = (end_price / start_price - 1) * 100
-    bond_index["bond"] = bond_rate
+        m_stocks = {}
+        for _, row in m_stock_ret.iterrows():
+            if pd.isna(row["涨跌幅"]):
+                continue
+            code = row["代码"]
+            if "." in code:
+                code = code.split(".")[1]
+            m_stocks[code] = row["涨跌幅"]
 
-    bond_cb_rate = bond_cb_index_ret.iloc[-1]["increase_val"] / 100
-    bond_index["bond_cb"] = bond_cb_rate
+        bond_index = {}
+        start_price = bond_normal_index_ret.iloc[-2]["value"]
+        end_price = bond_normal_index_ret.iloc[-1]["value"]
+        bond_rate = (end_price / start_price - 1) * 100
+        bond_index["bond"] = bond_rate
 
-    for _, row in bond_cb_ret.iterrows():
-        code = row["转债代码"]
-        rate = row["转债涨跌幅"]
-        name = row["转债名称"]
-        if pd.isna(rate):
-            continue
-        bond_index[code] = rate
-        bond_index[name] = rate
+        bond_cb_rate = bond_cb_index_ret.iloc[-1]["increase_val"] / 100
+        bond_index["bond_cb"] = bond_cb_rate
 
-    if now.hour >= 15 or now.hour < 9:
-        night_cache["rt_factor"] = (
+        for _, row in bond_cb_ret.iterrows():
+            code = row["转债代码"]
+            rate = row["转债涨跌幅"]
+            name = row["转债名称"]
+            if pd.isna(rate):
+                continue
+            bond_index[code] = rate
+            bond_index[name] = rate
+
+        night_cache["rt_factor_daily"] = (
             now,
             a_stocks.copy(),
             h_stocks.copy(),
             m_stocks.copy(),
             bond_index.copy(),
         )
+
+        if now.hour >= 15 or now.hour < 9:
+            night_cache["rt_factor"] = (
+                now,
+                a_stocks.copy(),
+                h_stocks.copy(),
+                m_stocks.copy(),
+                bond_index.copy(),
+            )
     return now, a_stocks, h_stocks, m_stocks, bond_index
 
 

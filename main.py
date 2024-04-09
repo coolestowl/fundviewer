@@ -72,7 +72,7 @@ async def basic_authorization(
     remote_host = request.client.host
     if remote_host in app.state.banip:
         logging.error(f"Login failed. Banned IP: {remote_host}")
-        raise HTTPException(status_code=401, detail="Unauthorized user")
+        raise HTTPException(status_code=401, detail="IP address has been blocked")
 
     username = credentials.username
     password = credentials.password
@@ -94,7 +94,9 @@ async def basic_authorization(
     if remote_host not in app.state.fail_login:
         app.state.fail_login[remote_host] = 1
     else:
-        app.state.fail_login[remote_host] += 1
+        app.state.fail_login[remote_host] = app.state.fail_login[remote_host] + 1
+
+    logging.info(f"ban ips: {app.state.banip} watch: {app.state.fail_login}")
     if app.state.fail_login[remote_host] >= 5:
         app.state.banip.append(remote_host)
         logging.error(f"New Banned IP: {remote_host}")
@@ -197,49 +199,59 @@ async def api_fund_share(
     app.state.share[uuid_str] = {"code": code, "ddl": next_day}
 
     ret_msg = f"分享链接为 {settings.base_url}/share/{uuid_str} ,有效期为 24 小时。"
-    response = await index(request, username, ret_msg, None)
+    response = await homepage(request, username, ret_msg, None)
     return response
 
 
 @app.get("/", response_class=HTMLResponse)
-async def index(
+async def homepage(
     request: Request,
     username: str = Depends(basic_authorization),
     succ_msg: Optional[str] = None,
     fail_msg: Optional[str] = None,
 ):
     """主页"""
-    try:
-        now, index = await get_index_new()
-    except Exception as e:
-        traceback.print_exc()
-        logging.error(f"get index error: {e}")
-        raise HTTPException(400, detail="get index error")
 
-    if username not in app.state.favour:
-        app.state.favour[username] = settings.favour_init.copy()
+    async def homepage_get_index():
+        try:
+            now, index = await get_index_new()
+            now_str = now.strftime("%H:%M:%S")
+        except Exception as e:
+            traceback.print_exc()
+            logging.error(f"get index error: {e}")
+            raise HTTPException(400, detail="get index error")
+        return now_str, index
 
-    favour_list = app.state.favour[username]
+    async def homepage_get_rt():
+        if username not in app.state.favour:
+            app.state.favour[username] = settings.favour_init.copy()
 
-    sem = asyncio.Semaphore(5)
+        favour_list = app.state.favour[username]
 
-    async def get_fund_evaluate(code):
-        async with sem:
-            try:
-                now, fund_info, evaluate, _ = await get_rt_evaluation(code=code)
-            except Exception as e:
-                traceback.print_exc()
-                logging.error(f"get fund evaluation error: {e}")
-                return None
-            fund_info["基金估值"] = evaluate
-            fund_info["估值时间"] = now.strftime("%H:%M:%S")
-            return fund_info
+        sem = asyncio.Semaphore(5)
 
-    tasks = [get_fund_evaluate(code) for code in favour_list]
+        async def get_fund_evaluate(code):
+            async with sem:
+                try:
+                    now, fund_info, evaluate, _ = await get_rt_evaluation(code=code)
+                except Exception as e:
+                    traceback.print_exc()
+                    logging.error(f"get fund evaluation error: {e}")
+                    return None
+                fund_info["基金估值"] = evaluate
+                fund_info["估值时间"] = now.strftime("%H:%M:%S")
+                return fund_info
 
-    favour_funds_info_list = await asyncio.gather(*tasks)
-    favour_funds_info_list = [f for f in favour_funds_info_list if f is not None]
-    now_str = now.strftime("%H:%M:%S")
+        tasks = [get_fund_evaluate(code) for code in favour_list]
+        favour_funds_info_list = await asyncio.gather(*tasks)
+        favour_funds_info_list = [f for f in favour_funds_info_list if f is not None]
+        return favour_funds_info_list
+
+    get_index_ret, get_rt_ret = await asyncio.gather(
+        homepage_get_index(), homepage_get_rt()
+    )
+    now_str, index = get_index_ret
+    favour_funds_info_list = get_rt_ret
 
     context = {
         "index_now": now_str,
@@ -273,18 +285,18 @@ async def fund_info(
 ):
     """处理基金请求"""
     if code is None:
-        response = await index(request, username, None, "基金代码为空")
+        response = await homepage(request, username, None, "基金代码为空")
         return response
 
     if len(code) != 6 or not code.isdigit():
-        response = await index(request, username, None, "基金代码格式错误")
+        response = await homepage(request, username, None, "基金代码格式错误")
         return response
 
     try:
         now, fund_info, evaluate, detailed_price = await get_rt_evaluation(code=code)
     except Exception as e:
         logging.error(f"get fund evaluation error: {e}")
-        response = await index(
+        response = await homepage(
             request, username, None, f"获取基金{code}估值失败，请稍后重试"
         )
         return response
@@ -402,7 +414,7 @@ async def fund_info_post(
 ):
     """处理基金请求"""
     if code is None:
-        response = await index(request, username, None, "基金代码为空")
+        response = await homepage(request, username, None, "基金代码为空")
         return response
     response = await fund_info(request, code, username)
     return response
@@ -418,7 +430,7 @@ async def watch_add(
     if code not in app.state.favour[username]:
         if len(app.state.favour[username]) >= settings.max_favour:
             logging.info(f"add favour fund failed for {username}: {code}")
-            response = await index(
+            response = await homepage(
                 request, username, None, f"最多只能关注 {settings.max_favour} 个基金"
             )
             return response
@@ -444,7 +456,7 @@ async def watch_del(
         app.state.favour[username].remove(code)
     else:
         logging.info(f"delete favour fund failed for {username}: {code}")
-        response = await index(request, username, None, "未关注该基金")
+        response = await homepage(request, username, None, "未关注该基金")
         return response
 
     if goback is None:
@@ -498,8 +510,8 @@ async def daily_refresh():
             logging.error(f"daily update error: {e}")
 
         logging.info(f"fresh banned ip successful")
-        app.state.fail_login = {}
-        app.state.banip = []
+        app.state.fail_login.clear()
+        app.state.banip.clear()
 
         try:
             next = now + datetime.timedelta(days=1)
@@ -535,13 +547,6 @@ async def auto_store():
 
 def init_state():
     """初始化应用状态"""
-    for up in settings.users.split(","):
-        try:
-            u, _ = up.split(":")
-            app.state.favour[u] = settings.favour_init.copy()
-        except:
-            logging.error(f"Invalid user format: {up}")
-            sys.exit(1)
 
     if settings.state_db != "" and os.path.exists(settings.state_db):
         with open(settings.state_db, "rb") as f:
@@ -549,6 +554,15 @@ def init_state():
             app.state.favour = state["favour"]
             app.state.share = state["share"]
         logging.info(f"load state from {settings.state_db}")
+
+    for up in settings.users.split(","):
+        try:
+            u, _ = up.split(":")
+            if u not in app.state.favour:
+                app.state.favour[u] = settings.favour_init.copy()
+        except:
+            logging.error(f"Invalid user format: {up}")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
