@@ -16,7 +16,11 @@
     {% block main %}
     <h1>test</h1>
     {% endblock %}
-    
+    <div class="row">
+        <div class="col-md-12 mt-2">
+            <p class="text-center text-secondary">Fundviewer 基金估值面板（版本: {{version}}）</p>
+        </div>
+    </div>
     <script src="{{ url_for('static', path='popper.min.js') }}"  crossorigin="anonymous" type="text/javascript"></script>
     <script src="{{ url_for('static', path='bootstrap.min.js') }}" crossorigin="anonymous" type="text/javascript"></script>
 </body>

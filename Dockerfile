@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 WORKDIR /app
-ADD requirements.txt /app
-RUN pip install -r requirements.txt
+# ADD requirements.txt /app
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple bs4 pandas httpx async-cache pydantic-settings fastapi uvicorn[standand] jinja2 python-multipart lxml
 ADD . /app
 CMD ["python", "main.py"]

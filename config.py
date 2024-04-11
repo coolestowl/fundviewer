@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     max_favour: int = 10
     base_url: str = "http://127.0.0.1:8600"
     favour_init: List[str] = ["004703"]
-    state_db: str = "state.db"
+    state_db: str = "data/state.db"
 
 
 settings = Settings()

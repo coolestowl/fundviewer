@@ -7,8 +7,7 @@ from typing import Any, Dict
 from bs4 import BeautifulSoup
 import pandas as pd
 import httpx
-from akshare.utils import demjson
-import requests
+import demjson
 
 
 async def stock_zh_index_spot_em(symbol: str = "上证系列指数") -> pd.DataFrame:

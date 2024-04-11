@@ -5,6 +5,7 @@ from typing import Dict
 
 import pandas as pd
 from cache import AsyncTTL
+from arcache import AsyncRefreshTTL
 import aakshare as aak
 import logging
 
@@ -77,7 +78,7 @@ async def get_index_new():
     sh_index, sz_index, zz_index = await asyncio.gather(sh_future, sz_future, zz_future)
 
     all_index = pd.concat([sh_index, sz_index, zz_index])
-    for code in ["000001", "000300", "000016", "399006", "000906"]:
+    for code in ["000001", "000300", "000016", "399006", "000905", "000906"]:
         row = all_index[all_index["代码"] == code].iloc[0]
         tmp_index.append(
             {
@@ -97,8 +98,8 @@ async def get_index_new():
     return now, tmp_index
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1)
-async def get_fund_rate(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1)
+async def get_fund_rate(code: str, _cache_refresh: bool = False):
     """获得基金的评级信息"""
     logging.info(f"getting fund rate for code {code}")
     fund_ratio = await aak.fund_rating_all()
@@ -116,8 +117,8 @@ async def get_fund_rate(code: str):
     return ret
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
-async def get_fund_hold_stack(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+async def get_fund_hold_stack(code: str, _cache_refresh: bool = False):
     """获得基金的持仓股票信息"""
     logging.info(f"getting fund hold stack for {code}")
     today = datetime.date.today()
@@ -164,8 +165,8 @@ async def get_fund_hold_stack(code: str):
     return result
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
-async def get_fund_hold_bond(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+async def get_fund_hold_bond(code: str, _cache_refresh: bool = False):
     """获得基金的持仓债券信息"""
     logging.info(f"getting fund hold bond for {code}")
     today = datetime.date.today()
@@ -211,6 +212,9 @@ async def get_fund_hold_bond(code: str):
     return result
 
 
+fund_unit_price_sem = asyncio.Semaphore(1)
+
+
 @AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_2, maxsize=1024)
 async def get_fund_unit_price() -> Dict[str, float]:
     """获取基金的最新单位净值信息（每天3点以后开始更新）"""
@@ -227,44 +231,58 @@ async def get_fund_unit_price() -> Dict[str, float]:
     except KeyError:
         pass
 
-    today = datetime.date.today()
-
-    fund_unit_price = await aak.fund_open_fund_daily_em()
-    today_key = today.strftime("%Y-%m-%d") + "-单位净值"
-    if today_key not in fund_unit_price.columns:
-        return {}
-
-    fund_unit_price = fund_unit_price[["基金代码", today_key, "日增长率"]]
-
-    unit_price_dict = {}
-    for _, row in fund_unit_price.iterrows():
-        code = row["基金代码"]
-        price = row[today_key]
-        rate = row["日增长率"]
-        if price == "" or rate == "":
-            continue
+    async with fund_unit_price_sem:
+        ret = night_cache.get("fund_unit_price_daily", None)
+        if ret is not None:
+            cache_time, unit_price_dict = ret
+            if (now - cache_time).seconds <= CACHE_PERIOD_HOUR_2:
+                logging.info(f"get fund unit price from daily long-term cache at {now}")
+                return unit_price_dict
         try:
-            price = float(price)
-            rate = float(rate)
-            unit_price_dict[code] = {"price": price, "rate": rate}
-        except Exception:
-            continue
+            night_cache.pop("fund_unit_price_daily")
+        except KeyError:
+            pass
 
-    if now.hour >= 0 and now.hour < 15:
-        night_cache["unit_price"] = unit_price_dict.copy()
+        today = datetime.date.today()
+
+        fund_unit_price = await aak.fund_open_fund_daily_em()
+        today_key = today.strftime("%Y-%m-%d") + "-单位净值"
+        if today_key not in fund_unit_price.columns:
+            return {}
+
+        fund_unit_price = fund_unit_price[["基金代码", today_key, "日增长率"]]
+
+        unit_price_dict = {}
+        for _, row in fund_unit_price.iterrows():
+            code = row["基金代码"]
+            price = row[today_key]
+            rate = row["日增长率"]
+            if price == "" or rate == "":
+                continue
+            try:
+                price = float(price)
+                rate = float(rate)
+                unit_price_dict[code] = {"price": price, "rate": rate}
+            except Exception:
+                continue
+
+        night_cache["fund_unit_price_daily"] = (now, unit_price_dict.copy())
+
+        if now.hour >= 0 and now.hour < 15:
+            night_cache["unit_price"] = unit_price_dict.copy()
 
     return unit_price_dict
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
-async def get_fund_share(code: str):
+async def get_fund_share_cache(code: str):
     """获取基金的持有股票和债券占比信息（15天更新）"""
     ret = await aak.get_fund_share(code)
     return ret
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
-async def get_fund_info_xq(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
+async def get_fund_info_xq(code: str, _cache_refresh: bool = False):
     """获取基金的基本信息（来源雪球网，每天更新）"""
     ret = await aak.fund_individual_basic_info_xq(symbol=code)
     return ret
@@ -279,7 +297,7 @@ async def get_fund_info(code: str):
     future_rate = get_fund_rate(code)
     future_hold_stock = get_fund_hold_stack(code)
     future_hold_bond = get_fund_hold_bond(code)
-    future_share = get_fund_share(code)
+    future_share = get_fund_share_cache(code)
     future_recent_price = get_fund_unit_price()
 
     basic_ret, rate_ret, stock_ret, bond_ret, fund_share_ret, recent_price_ret = (

@@ -16,7 +16,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 import uvicorn
-from aakshare import get_fund_share
 from config import settings
 import logging
 
@@ -31,10 +30,17 @@ from data import (
     get_index_new,
     get_rt_evaluation,
     get_rt_factor,
+    get_fund_share_cache,
 )
 
 
-app = FastAPI(title=settings.app_name, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(
+    title=settings.app_name,
+    version="2.1.1",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 app.state.favour = {}
 app.state.share = {}
 app.state.fail_login = {}
@@ -128,7 +134,7 @@ async def openapi():
 async def api_index(request: Request):
     """获取当前指数动态"""
     try:
-        now, index = await get_index()
+        now, index = await get_index_new()
     except Exception as e:
         logging.error(f"get index error: {e}")
         raise HTTPException(400, detail=f"get index error: {e}")
@@ -257,6 +263,7 @@ async def homepage(
         "index_now": now_str,
         "index": index,
         "favour_funds": favour_funds_info_list,
+        "version": app.version
     }
 
     if succ_msg is not None:
@@ -275,7 +282,7 @@ async def logout(request: Request, username: str = Depends(basic_authorization))
     logging.info(f"logout success. user: {username} from {request.client.host}")
 
     return templates.TemplateResponse(
-        request=request, name="logout.html", status_code=401
+        request=request, name="logout.html", status_code=401, context={"version": app.version}
     )
 
 
@@ -381,6 +388,7 @@ async def fund_info(
             "bond_show_total": bond_show_total,
             "detailed_price": detailed_price,
             "favour": favour,
+            "version": app.version
         },
     )
 
@@ -487,11 +495,11 @@ async def daily_refresh():
             async def update_one(code: str):
                 async with sem:
                     try:
-                        future_basic = get_fund_info_xq(code=code)
+                        future_basic = get_fund_info_xq(code=code, _cache_refresh=True)
                         future_rate = get_fund_rate(code)
                         future_hold_stock = get_fund_hold_stack(code)
                         future_hold_bond = get_fund_hold_bond(code)
-                        future_share = get_fund_share(code)
+                        future_share = get_fund_share_cache(code)
 
                         await asyncio.gather(
                             future_basic,
@@ -525,9 +533,9 @@ async def daily_refresh():
 
 
 async def auto_store():
-    """定时任务，每十分钟保存应用状态"""
+    """定时任务，每30分钟保存应用状态"""
     INIT_AUTO_STORE_DELAY = 30
-    AUTO_STORE_PERIOD = 300
+    AUTO_STORE_PERIOD = 1800
     if settings.state_db != "":
         await asyncio.sleep(INIT_AUTO_STORE_DELAY)
         logging.info("enable auto store")
