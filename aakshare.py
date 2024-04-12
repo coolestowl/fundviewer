@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date, datetime
 from io import StringIO
 import logging
 import re
@@ -227,9 +228,207 @@ async def stock_zh_index_spot_sina() -> pd.DataFrame:
     return big_df
 
 
+async def fund_purchase_em() -> pd.DataFrame:
+    """
+    东方财富网站-天天基金网-基金数据-基金申购状态
+    https://fund.eastmoney.com/Fund_sgzt_bzdm.html#fcode,asc_1
+    :return: 基金申购状态
+    :rtype: pandas.DataFrame
+    """
+    url = "http://fund.eastmoney.com/Data/Fund_JJJZ_Data.aspx"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
+    }
+    params = {
+        "t": "8",
+        "page": "1,50000",
+        "js": "reData",
+        "sort": "fcode,asc",
+        "_": "1641528557742",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(url, params=params, headers=headers)
+    data_text = r.text
+    data_json = demjson.decode(data_text.strip("var reData="))
+    temp_df = pd.DataFrame(data_json["datas"])
+    temp_df.reset_index(inplace=True)
+    temp_df["index"] = temp_df.index + 1
+    temp_df.columns = [
+        "序号",
+        "基金代码",
+        "基金简称",
+        "基金类型",
+        "最新净值/万份收益",
+        "最新净值/万份收益-报告时间",
+        "申购状态",
+        "赎回状态",
+        "下一开放日",
+        "购买起点",
+        "日累计限定金额",
+        "-",
+        "-",
+        "手续费",
+    ]
+    temp_df = temp_df[
+        [
+            "序号",
+            "基金代码",
+            "基金简称",
+            "基金类型",
+            "最新净值/万份收益",
+            "最新净值/万份收益-报告时间",
+            "申购状态",
+            "赎回状态",
+            "下一开放日",
+            "购买起点",
+            "日累计限定金额",
+            "手续费",
+        ]
+    ]
+    temp_df["下一开放日"] = pd.to_datetime(temp_df["下一开放日"]).dt.date
+    temp_df["最新净值/万份收益"] = pd.to_numeric(temp_df["最新净值/万份收益"])
+    temp_df["购买起点"] = pd.to_numeric(temp_df["购买起点"])
+    temp_df["日累计限定金额"] = pd.to_numeric(temp_df["日累计限定金额"])
+    temp_df["手续费"] = temp_df["手续费"].str.strip("%")
+    temp_df["手续费"] = pd.to_numeric(temp_df["手续费"])
+    return temp_df
+
+
+def __one_year_ago(date_str: str) -> date:
+    # 将字符串格式的日期转换为date对象
+    given_date = date(int(date_str[0:4]), int(date_str[4:6]), int(date_str[6:8]))
+
+    try:
+        # 尝试直接设置为前一年，保持相同的月和日
+        one_year_before = given_date.replace(year=given_date.year - 1)
+    except ValueError:
+        # 如果前一年没有相同的月和日（比如2月29日），则设置为2月28日
+        one_year_before = given_date.replace(year=given_date.year - 1, day=28)
+
+    return one_year_before
+
+
+async def fund_open_fund_rank_em(symbol: str = "全部") -> pd.DataFrame:
+    """
+    东方财富网-数据中心-开放基金排行
+    https://fund.eastmoney.com/data/fundranking.html
+    :param symbol: choice of {"全部", "股票型", "混合型", "债券型", "指数型", "QDII", "LOF", "FOF"}
+    :type symbol: str
+    :return: 开放基金排行
+    :rtype: pandas.DataFrame
+    """
+    current_date = datetime.now().date().isoformat()
+    last_date = __one_year_ago(current_date.replace("-", "")).isoformat()
+    url = "https://fund.eastmoney.com/data/rankhandler.aspx"
+    type_map = {
+        "全部": ["all", "1nzf"],
+        "股票型": ["gp", "1nzf"],
+        "混合型": ["hh", "1nzf"],
+        "债券型": ["zq", "1nzf"],
+        "指数型": ["zs", "1nzf"],
+        "QDII": ["qdii", "1nzf"],
+        "LOF": ["lof", "1nzf"],
+        "FOF": ["fof", "1nzf"],
+    }
+    params = {
+        "op": "ph",
+        "dt": "kf",
+        "ft": type_map[symbol][0],
+        "rs": "",
+        "gs": "0",
+        "sc": type_map[symbol][1],
+        "st": "desc",
+        "sd": last_date,
+        "ed": current_date,
+        "qdii": "",
+        "tabSubtype": ",,,,,",
+        "pi": "1",
+        "pn": "20000",
+        "dx": "1",
+        "v": "0.1591891419018292",
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36",
+        "Referer": "https://fund.eastmoney.com/fundguzhi.html",
+    }
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(url, params=params, headers=headers)
+    data_text = r.text
+    data_json = demjson.decode(data_text[data_text.find("{"): -1])
+    temp_df = pd.DataFrame(data_json["datas"])
+    temp_df = temp_df.iloc[:, 0].str.split(",", expand=True)
+    temp_df.reset_index(inplace=True)
+    temp_df["index"] = list(range(1, len(temp_df) + 1))
+    temp_df.columns = [
+        "序号",
+        "基金代码",
+        "基金简称",
+        "_",
+        "日期",
+        "单位净值",
+        "累计净值",
+        "日增长率",
+        "近1周",
+        "近1月",
+        "近3月",
+        "近6月",
+        "近1年",
+        "近2年",
+        "近3年",
+        "今年来",
+        "成立来",
+        "_",
+        "_",
+        "自定义",
+        "_",
+        "手续费",
+        "_",
+        "_",
+        "_",
+        "_",
+    ]
+    temp_df = temp_df[
+        [
+            "序号",
+            "基金代码",
+            "基金简称",
+            "日期",
+            "单位净值",
+            "累计净值",
+            "日增长率",
+            "近1周",
+            "近1月",
+            "近3月",
+            "近6月",
+            "近1年",
+            "近2年",
+            "近3年",
+            "今年来",
+            "成立来",
+            "自定义",
+            "手续费",
+        ]
+    ]
+    temp_df['日期'] = pd.to_datetime(temp_df['日期'], errors="coerce").dt.date
+    temp_df['单位净值'] = pd.to_numeric(temp_df['单位净值'], errors="coerce")
+    temp_df['累计净值'] = pd.to_numeric(temp_df['累计净值'], errors="coerce")
+    temp_df['日增长率'] = pd.to_numeric(temp_df['日增长率'], errors="coerce")
+    temp_df['近1周'] = pd.to_numeric(temp_df['近1周'], errors="coerce")
+    temp_df['近1月'] = pd.to_numeric(temp_df['近1月'], errors="coerce")
+    temp_df['近3月'] = pd.to_numeric(temp_df['近3月'], errors="coerce")
+    temp_df['近6月'] = pd.to_numeric(temp_df['近6月'], errors="coerce")
+    temp_df['近1年'] = pd.to_numeric(temp_df['近1年'], errors="coerce")
+    temp_df['近2年'] = pd.to_numeric(temp_df['近2年'], errors="coerce")
+    temp_df['近3年'] = pd.to_numeric(temp_df['近3年'], errors="coerce")
+    temp_df['今年来'] = pd.to_numeric(temp_df['今年来'], errors="coerce")
+    temp_df['成立来'] = pd.to_numeric(temp_df['成立来'], errors="coerce")
+    temp_df['自定义'] = pd.to_numeric(temp_df['自定义'], errors="coerce")
+    return temp_df
+
+
 async def fund_individual_basic_info_xq(
     symbol: str = "000001", timeout: float = 10
-) -> pd.DataFrame:
+) -> Dict[str, Any]:
     """
     雪球基金-基金详情
     https://danjuanfunds.com/djapi/fund/675091

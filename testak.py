@@ -1,3 +1,3 @@
 import akshare as ak
 
-ak.bond_zh_hs_spot()
+ak.fund_open_fund_rank_em(symbol="全部")

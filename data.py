@@ -282,10 +282,53 @@ async def get_fund_share_cache(code: str):
 
 
 @AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
+async def get_fund_info_fallback(code: str, _cache_refresh: bool = False):
+    """获取基金的基本信息（来源东方财富，每天更新）"""
+    future_purchase = aak.fund_purchase_em()
+    future_rate = aak.fund_open_fund_rank_em()
+    purchase_ret, rate_ret = await asyncio.gather(future_purchase, future_rate)
+    
+    purchase_fund = purchase_ret[purchase_ret["基金代码"] == code].iloc[0]
+    rate_fund = rate_ret[rate_ret["基金代码"] == code].iloc[0]
+    ret = {
+        "基金代码": purchase_fund.get("基金代码", code),
+        "基金名称": purchase_fund["基金简称"],
+        "基金全称": purchase_fund["基金简称"],
+        "基金类型": purchase_fund["基金类型"],
+        "成立时间": None,
+        "最新规模": None,
+        "基金公司": None,
+        "基金经理": None,
+        "开放购买": purchase_fund["申购状态"],
+        "基金评级": {},
+        "历史业绩": {},
+    }
+
+    ret["单位净值"] = float(rate_fund.get("单位净值", None))
+    ret["更新时间"] = rate_fund.get("日期", None)
+    ret["历史业绩"]["日增长率"] = float(rate_fund.get("日增长率", None))
+    ret["历史业绩"]["月增长率"] = float(rate_fund.get("近1月", None))
+    ret["历史业绩"]["三月增长率"] = float(rate_fund.get("近3月", None))
+    ret["历史业绩"]["六月增长率"] = float(rate_fund.get("近6月", None))
+    ret["历史业绩"]["年增长率"] = float(rate_fund.get("近1年", None))
+    ret["历史业绩"]["三年增长率"] = float(rate_fund.get("近3年", None))
+
+    ret["历史业绩"]["月排名"] = None
+    ret["历史业绩"]["三月排名"] = None
+    ret["历史业绩"]["六月排名"] = None
+    ret["历史业绩"]["年排名"] = None
+    ret["历史业绩"]["三年排名"] = None
+    return ret
+
+
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
 async def get_fund_info_xq(code: str, _cache_refresh: bool = False):
     """获取基金的基本信息（来源雪球网，每天更新）"""
-    ret = await aak.fund_individual_basic_info_xq(symbol=code)
-    return ret
+    try:
+        ret = await aak.fund_individual_basic_info_xq(symbol=code)
+        return ret
+    except Exception as e:
+        return await get_fund_info_fallback(code=code, _cache_refresh=_cache_refresh)
 
 
 @AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
