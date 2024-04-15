@@ -36,7 +36,7 @@ from data import (
 
 app = FastAPI(
     title=settings.app_name,
-    version="2.1.1",
+    version="2.1.2",
     docs_url=None,
     redoc_url=None,
     openapi_url=None,

@@ -218,7 +218,7 @@ async def get_fund_hold_bond(code: str, _cache_refresh: bool = False):
     return result
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_HOUR_2, maxsize=1, concurrent_lock=1)
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1, concurrent_lock=1)
 async def get_fund_unit_price() -> Dict[str, float]:
     """获取基金的最新单位净值信息（每天3点以后开始更新）"""
     logging.info(f"getting fund unit price")
