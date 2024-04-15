@@ -1,3 +1,5 @@
+import asyncio
+from typing import Optional
 from cache.key import KEY
 from cache.lru import LRU
 import datetime
@@ -36,7 +38,7 @@ class AsyncRefreshTTL:
             super().__setitem__(key, (value, ttl_value))
 
     def __init__(
-            self, time_to_live=60, maxsize=1024, skip_args: int = 0
+            self, time_to_live=60, maxsize=1024, skip_args: int = 0, concurrent_lock: Optional[int] = None
     ):
         """
 
@@ -46,17 +48,29 @@ class AsyncRefreshTTL:
         """
         self.ttl = self._TTL(time_to_live=time_to_live, maxsize=maxsize)
         self.skip_args = skip_args
+        if concurrent_lock is not None and concurrent_lock > 0:
+            self.current_sem = asyncio.Semaphore(concurrent_lock)
+        else:
+            self.current_sem = None
 
     def __call__(self, func):
         async def wrapper(*args, **kwargs):
             cache_refresh = kwargs.pop('_cache_refresh', False)
             key = KEY(args[self.skip_args:], kwargs)
-            if not cache_refresh and key in self.ttl:
-                val = self.ttl[key]
-            else:
-                self.ttl[key] = await func(*args, **kwargs)
-                val = self.ttl[key]
 
+            if self.current_sem is None:
+                if not cache_refresh and key in self.ttl:
+                    val = self.ttl[key]
+                else:
+                    self.ttl[key] = await func(*args, **kwargs)
+                    val = self.ttl[key]
+            else:
+                async with self.current_sem:
+                    if not cache_refresh and key in self.ttl:
+                        val = self.ttl[key]
+                    else:
+                        self.ttl[key] = await func(*args, **kwargs)
+                        val = self.ttl[key]
             return val
 
         wrapper.__name__ += func.__name__

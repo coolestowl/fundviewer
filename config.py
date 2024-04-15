@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     users: str = "admin:admin"
     max_favour: int = 10
     base_url: str = "http://127.0.0.1:8600"
-    favour_init: List[str] = ["004703"]
+    favour_init: List[str] = ["004703", "000979"]
     state_db: str = "data/state.db"
 
 
