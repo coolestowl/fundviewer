@@ -215,7 +215,7 @@ async def get_fund_hold_bond(code: str, _cache_refresh: bool = False):
 fund_unit_price_sem = asyncio.Semaphore(1)
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_2, maxsize=1024)
+@AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_2, maxsize=1)
 async def get_fund_unit_price() -> Dict[str, float]:
     """获取基金的最新单位净值信息（每天3点以后开始更新）"""
     logging.info(f"getting fund unit price")
@@ -248,6 +248,7 @@ async def get_fund_unit_price() -> Dict[str, float]:
         fund_unit_price = await aak.fund_open_fund_daily_em()
         today_key = today.strftime("%Y-%m-%d") + "-单位净值"
         if today_key not in fund_unit_price.columns:
+            night_cache["fund_unit_price_daily"] = (now, {})
             return {}
 
         fund_unit_price = fund_unit_price[["基金代码", today_key, "日增长率"]]
