@@ -96,6 +96,7 @@ async def get_index_new():
 
     return now, tmp_index
 
+
 @AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1, concurrent_lock=1)
 async def get_fund_rate_all(_cache_refresh: bool = False):
     """获得基金的评级信息"""
@@ -234,7 +235,6 @@ async def get_fund_unit_price() -> Dict[str, float]:
     except KeyError:
         pass
 
-
     today = datetime.date.today()
 
     fund_unit_price = await aak.fund_open_fund_daily_em()
@@ -277,7 +277,7 @@ async def get_fund_info_fallback(code: str, _cache_refresh: bool = False):
     future_purchase = aak.fund_purchase_em()
     future_rate = aak.fund_open_fund_rank_em()
     purchase_ret, rate_ret = await asyncio.gather(future_purchase, future_rate)
-    
+
     purchase_fund = purchase_ret[purchase_ret["基金代码"] == code].iloc[0]
     rate_fund = rate_ret[rate_ret["基金代码"] == code].iloc[0]
     ret = {
@@ -398,9 +398,9 @@ async def get_rt_factor():
     future_a_stock = aak.stock_zh_a_spot_em()
     future_h_stock = aak.stock_hk_spot_em()
     future_m_stock = aak.stock_us_spot_em()
-    future_bond_normal_index = aak.bond_new_composite_index_cbond(
-        indicator="财富", period="总值"
-    )
+    # future_bond_normal_index = aak.bond_new_composite_index_cbond(
+    #     indicator="财富", period="总值"
+    # )
     future_cb_index = aak.bond_cb_index_jsl()
     future_cb = aak.bond_cov_comparison()
 
@@ -408,14 +408,14 @@ async def get_rt_factor():
         a_stock_ret,
         h_stock_ret,
         m_stock_ret,
-        bond_normal_index_ret,
+        # bond_normal_index_ret,
         bond_cb_index_ret,
         bond_cb_ret,
     ) = await asyncio.gather(
         future_a_stock,
         future_h_stock,
         future_m_stock,
-        future_bond_normal_index,
+        # future_bond_normal_index,
         future_cb_index,
         future_cb,
     )
@@ -442,10 +442,10 @@ async def get_rt_factor():
         m_stocks[code] = row["涨跌幅"]
 
     bond_index = {}
-    start_price = bond_normal_index_ret.iloc[-2]["value"]
-    end_price = bond_normal_index_ret.iloc[-1]["value"]
-    bond_rate = (end_price / start_price - 1) * 100
-    bond_index["bond"] = bond_rate
+    # start_price = bond_normal_index_ret.iloc[-2]["value"]
+    # end_price = bond_normal_index_ret.iloc[-1]["value"]
+    # bond_rate = (end_price / start_price - 1) * 100
+    bond_index["bond"] = 0
 
     bond_cb_rate = bond_cb_index_ret.iloc[-1]["increase_val"] / 100
     bond_index["bond_cb"] = bond_cb_rate
@@ -517,6 +517,9 @@ async def get_rt_evaluation(code: str):
         except Exception:
             traceback.print_exc()
             continue
+
+    logging.info(f"debug point 2 {code}")
+
     logging.info(stock_share_account)
     stock_evaluate_rate = (
         stock_price_total / stock_share_account if stock_share_account > 0 else 0

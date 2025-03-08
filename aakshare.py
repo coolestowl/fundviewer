@@ -1129,7 +1129,7 @@ async def bond_new_composite_index_cbond(
         "": "",
         "locale": "",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10, connect=60), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"}) as client:
         r = await client.post(url, params=params)
     data_json = r.json()
     temp_df = pd.DataFrame.from_dict(
