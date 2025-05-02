@@ -71,12 +71,12 @@ async def get_index_new():
 
     tmp_index = []
 
-    sh_future = aak.stock_zh_index_spot_em("上证系列指数")
-    sz_future = aak.stock_zh_index_spot_em("深证系列指数")
+    sh_future = aak.stock_zh_index_spot_em("沪深重要指数")
+    # sz_future = aak.stock_zh_index_spot_em("沪深重要指数")
 
-    sh_index, sz_index = await asyncio.gather(sh_future, sz_future)
-
-    all_index = pd.concat([sh_index, sz_index])
+    sh_index = await asyncio.gather(sh_future)
+    all_index = sh_index[0]
+    print(all_index)
     for code in ["000001", "000300", "000016", "399006", "000905", "000906"]:
         row = all_index[all_index["代码"] == code].iloc[0]
         tmp_index.append(

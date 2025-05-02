@@ -2,6 +2,7 @@ import asyncio
 from datetime import date, datetime
 from io import StringIO
 import logging
+import math
 import re
 import time
 from typing import Any, Dict
@@ -11,42 +12,78 @@ import httpx
 import demjson
 
 
-async def stock_zh_index_spot_em(symbol: str = "上证系列指数") -> pd.DataFrame:
+async def fetch_paginated_data(url: str, base_params: Dict, timeout: int = 15):
     """
-    东方财富网-行情中心-沪深京指数
-    https://quote.eastmoney.com/center/gridlist.html#index_sz
-    :param symbol: "上证系列指数"; choice of {"上证系列指数", "深证系列指数", "指数成份", "中证系列指数"}
-    :type symbol: str
+    东方财富-分页获取数据并合并结果
+    https://quote.eastmoney.com/f1.html?newcode=0.000001
+    :param url: 股票代码
+    :type url: str
+    :param base_params: 基础请求参数
+    :type base_params: dict
+    :param timeout: 请求超时时间
+    :type timeout: str
+    :return: 合并后的数据
+    :rtype: pandas.DataFrame
+    """
+    # 复制参数以避免修改原始参数
+    params = base_params.copy()
+    # 获取第一页数据，用于确定分页信息
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(url, params=params, timeout=timeout)
+    data_json = r.json()
+    # 计算分页信息
+    per_page_num = len(data_json["data"]["diff"])
+    total_page = math.ceil(data_json["data"]["total"] / per_page_num)
+    # 存储所有页面数据
+    temp_list = []
+    # 添加第一页数据
+    temp_list.append(pd.DataFrame(data_json["data"]["diff"]))
+    # 获取进度条
+    # 获取剩余页面数据
+    for page in range(2, total_page + 1):
+        params.update({"pn": page})
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url, params=params, timeout=timeout)
+        data_json = r.json()
+        inner_temp_df = pd.DataFrame(data_json["data"]["diff"])
+        temp_list.append(inner_temp_df)
+    # 合并所有数据
+    temp_df = pd.concat(temp_list, ignore_index=True)
+    temp_df["f3"] = pd.to_numeric(temp_df["f3"], errors="coerce")
+    temp_df.sort_values(by=["f3"], ascending=False, inplace=True, ignore_index=True)
+    temp_df.reset_index(inplace=True)
+    temp_df["index"] = temp_df["index"].astype(int) + 1
+    return temp_df
+
+async def __stock_zh_main_spot_em() -> pd.DataFrame:
+    """
+    东方财富网-行情中心-沪深重要指数
+    https://quote.eastmoney.com/center/hszs.html
     :return: 指数的实时行情数据
     :rtype: pandas.DataFrame
     """
-    url = "https://48.push2.eastmoney.com/api/qt/clist/get"
-    symbol_map = {
-        "上证系列指数": "m:1+s:2",
-        "深证系列指数": "m:0+t:5",
-        "指数成份": "m:1+s:3,m:0+t:5",
-        "中证系列指数": "m:2",
-    }
+    url = "https://33.push2.eastmoney.com/api/qt/clist/get"
     params = {
         "pn": "1",
-        "pz": "5000",
+        "pz": "100",
         "po": "1",
         "np": "1",
         "ut": "bd1d9ddb04089700cf9c27f6f7426281",
         "fltt": "2",
         "invt": "2",
+        "dect": "1",
         "wbp2u": "|0|0|0|web",
-        "fid": "f3",
-        "fs": symbol_map[symbol],
-        "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152",
-        "_": "1704327268532",
+        "fid": "",
+        "fs": "b:MK0010",
+        "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,"
+        "f23,f24,f25,f26,f22,f11,f62,f128,f136,f115,f152",
     }
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(url, params=params)
     data_json = r.json()
     temp_df = pd.DataFrame(data_json["data"]["diff"])
     temp_df.reset_index(inplace=True)
-    temp_df["index"] = temp_df["index"] + 1
+    temp_df["index"] = temp_df["index"].astype(int) + 1
     temp_df.rename(
         columns={
             "index": "序号",
@@ -96,6 +133,91 @@ async def stock_zh_index_spot_em(symbol: str = "上证系列指数") -> pd.DataF
     temp_df["昨收"] = pd.to_numeric(temp_df["昨收"], errors="coerce")
     temp_df["量比"] = pd.to_numeric(temp_df["量比"], errors="coerce")
     return temp_df
+
+async def stock_zh_index_spot_em(symbol: str = "上证系列指数") -> pd.DataFrame:
+    """
+    东方财富网-行情中心-沪深京指数
+    https://quote.eastmoney.com/center/gridlist.html#index_sz
+    :param symbol: "上证系列指数"; choice of {"沪深重要指数", "上证系列指数", "深证系列指数", "指数成份", "中证系列指数"}
+    :type symbol: str
+    :return: 指数的实时行情数据
+    :rtype: pandas.DataFrame
+    """
+    if symbol == "沪深重要指数":
+        return await __stock_zh_main_spot_em()
+
+    url = "https://48.push2.eastmoney.com/api/qt/clist/get"
+    symbol_map = {
+        "上证系列指数": "m:1+t:1",
+        "深证系列指数": "m:0 t:5",
+        "指数成份": "m:1+s:3,m:0+t:5",
+        "中证系列指数": "m:2",
+    }
+    params = {
+        "pn": "1",
+        "pz": "100",
+        "po": "1",
+        "np": "1",
+        "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        "fltt": "2",
+        "invt": "2",
+        "wbp2u": "|0|0|0|web",
+        "fid": "f12",
+        "fs": symbol_map[symbol],
+        "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,"
+        "f26,f22,f33,f11,f62,f128,f136,f115,f152",
+    }
+    temp_df = await fetch_paginated_data(url, params)
+    temp_df.rename(
+        columns={
+            "index": "序号",
+            "f2": "最新价",
+            "f3": "涨跌幅",
+            "f4": "涨跌额",
+            "f5": "成交量",
+            "f6": "成交额",
+            "f7": "振幅",
+            "f10": "量比",
+            "f12": "代码",
+            "f14": "名称",
+            "f15": "最高",
+            "f16": "最低",
+            "f17": "今开",
+            "f18": "昨收",
+        },
+        inplace=True,
+    )
+    temp_df = temp_df[
+        [
+            "序号",
+            "代码",
+            "名称",
+            "最新价",
+            "涨跌幅",
+            "涨跌额",
+            "成交量",
+            "成交额",
+            "振幅",
+            "最高",
+            "最低",
+            "今开",
+            "昨收",
+            "量比",
+        ]
+    ]
+    temp_df["最新价"] = pd.to_numeric(temp_df["最新价"], errors="coerce")
+    temp_df["涨跌幅"] = pd.to_numeric(temp_df["涨跌幅"], errors="coerce")
+    temp_df["涨跌额"] = pd.to_numeric(temp_df["涨跌额"], errors="coerce")
+    temp_df["成交量"] = pd.to_numeric(temp_df["成交量"], errors="coerce")
+    temp_df["成交额"] = pd.to_numeric(temp_df["成交额"], errors="coerce")
+    temp_df["振幅"] = pd.to_numeric(temp_df["振幅"], errors="coerce")
+    temp_df["最高"] = pd.to_numeric(temp_df["最高"], errors="coerce")
+    temp_df["最低"] = pd.to_numeric(temp_df["最低"], errors="coerce")
+    temp_df["今开"] = pd.to_numeric(temp_df["今开"], errors="coerce")
+    temp_df["昨收"] = pd.to_numeric(temp_df["昨收"], errors="coerce")
+    temp_df["量比"] = pd.to_numeric(temp_df["量比"], errors="coerce")
+    return temp_df
+
 
 
 def _replace_comma(x):
