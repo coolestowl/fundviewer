@@ -475,8 +475,81 @@ async def watch_del(
     return response
 
 
+def is_trading_time() -> bool:
+    """判断当前是否为交易时间（周一至周五 9:00-15:00）"""
+    now = datetime.datetime.now()
+    weekday = now.weekday()
+    hour = now.hour
+    minute = now.minute
+
+    # 周末不交易
+    if weekday >= 5:
+        return False
+
+    # 交易时间: 9:30-11:30, 13:00-15:00
+    if (hour == 9 and minute >= 30) or (hour == 10) or (hour == 11 and minute <= 30):
+        return True
+    if (hour >= 13 and hour < 15):
+        return True
+
+    return False
+
+
+async def background_refresh():
+    """后台定时刷新任务，交易时间内每2分钟刷新一次关注的基金数据"""
+    REFRESH_INTERVAL = 120  # 2分钟刷新一次
+    await asyncio.sleep(30)  # 启动后等待30秒
+    logging.info("Background refresh task started")
+
+    while True:
+        try:
+            if is_trading_time():
+                logging.info("Trading time - starting background refresh")
+
+                # 收集所有用户关注的基金
+                fund_list = []
+                for username in app.state.favour:
+                    for code in app.state.favour[username]:
+                        if code not in fund_list:
+                            fund_list.append(code)
+
+                if fund_list:
+                    sem = asyncio.Semaphore(settings.max_concurrent_requests)
+                    delay_seconds = settings.request_delay_ms / 1000.0
+
+                    async def refresh_one(code: str):
+                        async with sem:
+                            try:
+                                await get_rt_evaluation(code=code, _cache_refresh=True)
+                                logging.debug(f"Background refresh success: {code}")
+                            except Exception as e:
+                                logging.warning(f"Background refresh failed for {code}: {e}")
+                        if delay_seconds > 0:
+                            await asyncio.sleep(delay_seconds)
+
+                    # 先刷新指数
+                    try:
+                        await get_index_new()
+                        await get_rt_factor()
+                        logging.debug("Background refresh: index and rt_factor updated")
+                    except Exception as e:
+                        logging.warning(f"Background refresh index failed: {e}")
+
+                    # 刷新所有关注的基金
+                    tasks = [refresh_one(code) for code in fund_list]
+                    await asyncio.gather(*tasks)
+
+                    logging.info(f"Background refresh completed: {len(fund_list)} funds")
+            else:
+                logging.debug("Non-trading time - skip background refresh")
+        except Exception as e:
+            logging.error(f"Background refresh error: {e}")
+
+        await asyncio.sleep(REFRESH_INTERVAL)
+
+
 async def daily_refresh():
-    """每日11点定时任务，用于预缓存被关注的基金信息，并清理ban_ip"""
+    """每日定时任务，用于预缓存被关注的基金信息，并清理ban_ip"""
     await asyncio.sleep(15)
     logging.info("enable daily update")
     while True:
@@ -618,5 +691,6 @@ if __name__ == "__main__":
     srv_f = server.serve()
     update_f = daily_refresh()
     store_f = auto_store()
+    bg_refresh_f = background_refresh()
 
-    loop.run_until_complete(asyncio.gather(srv_f, update_f, store_f))
+    loop.run_until_complete(asyncio.gather(srv_f, update_f, store_f, bg_refresh_f))
