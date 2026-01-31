@@ -28,7 +28,7 @@ async def fetch_paginated_data(url: str, base_params: Dict, timeout: int = 15):
     # 复制参数以避免修改原始参数
     params = base_params.copy()
     # 获取第一页数据，用于确定分页信息
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params, timeout=timeout)
     data_json = r.json()
     # 计算分页信息
@@ -42,7 +42,7 @@ async def fetch_paginated_data(url: str, base_params: Dict, timeout: int = 15):
     # 获取剩余页面数据
     for page in range(2, total_page + 1):
         params.update({"pn": page})
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             r = await client.get(url, params=params, timeout=timeout)
         data_json = r.json()
         inner_temp_df = pd.DataFrame(data_json["data"]["diff"])
@@ -78,7 +78,7 @@ async def __stock_zh_main_spot_em() -> pd.DataFrame:
         "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,"
         "f23,f24,f25,f26,f22,f11,f62,f128,f136,f115,f152",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     data_json = r.json()
     temp_df = pd.DataFrame(data_json["data"]["diff"])
@@ -241,7 +241,7 @@ async def get_zh_index_page_count() -> int:
     :return: 需要抓取的指数的总页数
     :rtype: int
     """
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         res = await client.get(
             "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeStockCountSimple?node=hs_s"
         )
@@ -266,7 +266,7 @@ async def stock_zh_index_spot_sina_page(page: int, sem):
     zh_sina_stock_payload_copy = zh_sina_index_stock_payload.copy()
     zh_sina_stock_payload_copy.update({"page": page})
     async with sem:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             res = await client.get(
                 "http://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeDataSimple",
                 params=zh_sina_stock_payload_copy,
@@ -368,7 +368,7 @@ async def fund_purchase_em() -> pd.DataFrame:
         "sort": "fcode,asc",
         "_": "1641528557742",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params, headers=headers)
     data_text = r.text
     data_json = demjson.decode(data_text.strip("var reData="))
@@ -473,7 +473,7 @@ async def fund_open_fund_rank_em(symbol: str = "全部") -> pd.DataFrame:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36",
         "Referer": "https://fund.eastmoney.com/fundguzhi.html",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params, headers=headers)
     data_text = r.text
     data_json = demjson.decode(data_text[data_text.find("{"): -1])
@@ -565,7 +565,7 @@ async def fund_individual_basic_info_xq(
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
     }
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
         r = await client.get(url, headers=headers, timeout=timeout)
     json_data: Dict[str, Any] = r.json()["data"]
 
@@ -628,7 +628,7 @@ async def fund_rating_all() -> pd.DataFrame:
     :rtype: pandas.DataFrame
     """
     url = "https://fund.eastmoney.com/data/fundrating.html"
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         r = await client.get(url)
     soup = BeautifulSoup(r.text, "lxml")
     data_text = soup.find("div", attrs={"id": "fundinfo"}).find("script").string
@@ -718,7 +718,7 @@ async def fund_portfolio_hold_em(
         "month": "",
         "rt": "0.913877030254846",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     data_text = r.text
     data_json = demjson.decode(data_text[data_text.find("{") : -1])
@@ -799,7 +799,7 @@ async def fund_portfolio_bond_hold_em(
         "year": date,
         "rt": "0.913877030254846",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     data_text = r.text
     data_json = demjson.decode(data_text[data_text.find("{") : -1])
@@ -841,7 +841,7 @@ async def get_fund_share(code: str):
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(
                 f"https://fundf10.eastmoney.com/zcpz_{code}.html", headers=header
             )
@@ -901,7 +901,7 @@ async def stock_zh_a_spot_em() -> pd.DataFrame:
         "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152",
         "_": "1623833739532",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     data_json = r.json()
     if not data_json["data"]["diff"]:
@@ -1018,7 +1018,7 @@ async def stock_hk_spot_em() -> pd.DataFrame:
         "fields": "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152",
         "_": f"{tss}",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     data_json = r.json()
     temp_df = pd.DataFrame(data_json["data"]["diff"])
@@ -1109,7 +1109,7 @@ async def stock_us_spot_em() -> pd.DataFrame:
         "f21,f23,f24,f25,f26,f22,f33,f11,f62,f128,f136,f115,f152",
         "_": "1624010056945",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     data_json = r.json()
     temp_df = pd.DataFrame(data_json["data"]["diff"])
@@ -1251,7 +1251,7 @@ async def bond_new_composite_index_cbond(
         "": "",
         "locale": "",
     }
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10, connect=60), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"}) as client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10, connect=60), headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0"}, follow_redirects=True) as client:
         r = await client.post(url, params=params)
     data_json = r.json()
     temp_df = pd.DataFrame.from_dict(
@@ -1278,7 +1278,7 @@ async def bond_cb_index_jsl() -> pd.DataFrame:
     :rtype: pandas.DataFrame
     """
     url = "https://www.jisilu.cn/webapi/cb/index_history/"
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url)
     data_dict = demjson.decode(r.text)["data"]
     temp_df = pd.DataFrame(data_dict)
@@ -1339,7 +1339,7 @@ async def bond_cb_jsl(cookie: str = None) -> pd.DataFrame:
         "bond_ids": "",
         "rp": "50",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.post(url, params=params, json=payload, headers=headers)
     data_json = r.json()
     temp_df = pd.DataFrame([item["cell"] for item in data_json["rows"]])
@@ -1441,7 +1441,7 @@ async def bond_cov_comparison() -> pd.DataFrame:
         "f235,f236,f237,f238,f239,f240,f241,f242,f26,f243",
         "_": "1590386857527",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(url, params=params)
     text_data = r.text
     json_data = demjson.decode(text_data)
@@ -1526,7 +1526,7 @@ async def fund_open_fund_daily_em() -> pd.DataFrame:
         "atfc": "",
         "onlySale": "0",
     }
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         res = await client.get(url, params=params, headers=headers)
     text_data = res.text
     data_json = demjson.decode(text_data.strip("var db="))

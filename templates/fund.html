@@ -160,15 +160,15 @@
                                         <td>{{s["code"]}}</td>
                                         <td>{{s["name"]}}</td>
                                         <td>{{"%.2f" | format(s["share"])}}%</td>
-                                        <td style="color:{%if detailed_price['stock'][s['code']] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price['stock'][s['code']])}}%</td>
+                                        <td style="color:{%if detailed_price.get('stock', {}).get(s['code'], 0) > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price.get('stock', {}).get(s['code'], 0))}}%</td>
                                     </tr>
                                     {% endfor %}
                                     <tr>
                                         <th scope="row">合计</th>
                                         <td></td>
                                         <td></td>
-                                        <td style="color:{%if detailed_price['stock']['avg'] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(stock_show_total)}}%</td>
-                                        <td style="color:{%if detailed_price['stock']['avg'] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price["stock"]["avg"])}}% </td>
+                                        <td style="color:{%if detailed_price.get('stock', {}).get('avg', 0) > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(stock_show_total)}}%</td>
+                                        <td style="color:{%if detailed_price.get('stock', {}).get('avg', 0) > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price.get('stock', {}).get('avg', 0))}}% </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -190,15 +190,15 @@
                                         <td>{{s['code']}}</td>
                                         <td>{{s['name']}}</td>
                                         <td>{{"%.2f" | format(s["share"])}}%</td>
-                                        <td style="color:{%if detailed_price['bond'][s['code']] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price['bond'][s['code']])}}%</td>
+                                        <td style="color:{%if detailed_price.get('bond', {}).get(s['code'], 0) > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(detailed_price.get('bond', {}).get(s['code'], 0))}}%</td>
                                     </tr>
                                     {% endfor %}
                                     <tr>
                                         <th scope="row">合计</th>
                                         <td></td>
                                         <td></td>
-                                        <td style="color:{%if detailed_price['bond']['avg'] > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(bond_show_total)}} </td>
-                                        <td style="color:{%if detailed_price['bond']['avg'] > 0%}red{%else%}green{%endif%}">{{ "%.2f" | format(detailed_price["bond"]["avg"])}}% </td>
+                                        <td style="color:{%if detailed_price.get('bond', {}).get('avg', 0) > 0%}red{%else%}green{%endif%}">{{"%.2f" | format(bond_show_total)}} </td>
+                                        <td style="color:{%if detailed_price.get('bond', {}).get('avg', 0) > 0%}red{%else%}green{%endif%}">{{ "%.2f" | format(detailed_price.get('bond', {}).get('avg', 0))}}% </td>
                                     </tr>
                                 </tbody>
                             </table>
