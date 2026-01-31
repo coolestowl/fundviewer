@@ -264,8 +264,8 @@ async def get_fund_unit_price() -> Dict[str, float]:
     return unit_price_dict
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
-async def get_fund_share_cache(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+async def get_fund_share_cache(code: str, _cache_refresh: bool = False):
     """获取基金的持有股票和债券占比信息（15天更新）"""
     ret = await aak.get_fund_share(code)
     return ret
@@ -321,16 +321,16 @@ async def get_fund_info_xq(code: str, _cache_refresh: bool = False):
         return await get_fund_info_fallback(code=code, _cache_refresh=_cache_refresh)
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
-async def get_fund_info(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
+async def get_fund_info(code: str, _cache_refresh: bool = False):
     """汇总获得完整的基金信息"""
     logging.info(f"getting fund info for {code}")
 
-    future_basic = get_fund_info_xq(code=code)
-    future_rate = get_fund_rate(code)
-    future_hold_stock = get_fund_hold_stack(code)
-    future_hold_bond = get_fund_hold_bond(code)
-    future_share = get_fund_share_cache(code)
+    future_basic = get_fund_info_xq(code=code, _cache_refresh=_cache_refresh)
+    future_rate = get_fund_rate(code, _cache_refresh=_cache_refresh)
+    future_hold_stock = get_fund_hold_stack(code, _cache_refresh=_cache_refresh)
+    future_hold_bond = get_fund_hold_bond(code, _cache_refresh=_cache_refresh)
+    future_share = get_fund_share_cache(code, _cache_refresh=_cache_refresh)
     future_recent_price = get_fund_unit_price()
 
     basic_ret, rate_ret, stock_ret, bond_ret, fund_share_ret, recent_price_ret = (
@@ -347,6 +347,10 @@ async def get_fund_info(code: str):
     basic_ret["基金评级"].update(rate_ret)
     basic_ret["持有股票"] = stock_ret
     basic_ret["持有债券"] = bond_ret
+
+    # Handle case where fund_share_ret is None (API failure)
+    if fund_share_ret is None:
+        fund_share_ret = {}
 
     if (stock_share := fund_share_ret.get("stock_share", None)) is not None:
         basic_ret["持有股票占比"] = stock_share
@@ -379,7 +383,7 @@ async def get_fund_info(code: str):
     return basic_ret
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=10, concurrent_lock=1)
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1, concurrent_lock=1)
 async def get_rt_factor():
     """获得实时的股票、债券信息（交易时间更新）"""
     now = datetime.datetime.now()
@@ -478,10 +482,10 @@ async def get_rt_factor():
     return now, a_stocks, h_stocks, m_stocks, bond_index
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1024)
-async def get_rt_evaluation(code: str):
+@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1024)
+async def get_rt_evaluation(code: str, _cache_refresh: bool = False):
     """计算基金的实时估值"""
-    fund_info_future = get_fund_info(code)
+    fund_info_future = get_fund_info(code, _cache_refresh=_cache_refresh)
     rt_factor_facture = get_rt_factor()
 
     fund_info, rt_factor = await asyncio.gather(fund_info_future, rt_factor_facture)
