@@ -111,6 +111,12 @@ async def get_fund_rate(code: str, _cache_refresh: bool = False):
     logging.info(f"getting fund rate for code {code}")
     fund_ratio = await get_fund_rate_all(_cache_refresh=_cache_refresh)
     selected_fund = fund_ratio[fund_ratio.代码 == code]
+    
+    # Check if the fund was found in the rating database
+    if selected_fund.empty:
+        logging.warning(f"Fund {code} not found in rating database")
+        return {}
+    
     selected_fund = selected_fund.iloc[0]
 
     ret = {}
@@ -278,8 +284,19 @@ async def get_fund_info_fallback(code: str, _cache_refresh: bool = False):
     future_rate = aak.fund_open_fund_rank_em()
     purchase_ret, rate_ret = await asyncio.gather(future_purchase, future_rate)
 
-    purchase_fund = purchase_ret[purchase_ret["基金代码"] == code].iloc[0]
-    rate_fund = rate_ret[rate_ret["基金代码"] == code].iloc[0]
+    # Check if the fund was found in purchase database
+    purchase_fund_df = purchase_ret[purchase_ret["基金代码"] == code]
+    if purchase_fund_df.empty:
+        logging.error(f"Fund {code} not found in purchase database")
+        raise ValueError(f"Fund {code} not found in purchase database")
+    purchase_fund = purchase_fund_df.iloc[0]
+    
+    # Check if the fund was found in rate database
+    rate_fund_df = rate_ret[rate_ret["基金代码"] == code]
+    if rate_fund_df.empty:
+        logging.error(f"Fund {code} not found in rate database")
+        raise ValueError(f"Fund {code} not found in rate database")
+    rate_fund = rate_fund_df.iloc[0]
     ret = {
         "基金代码": purchase_fund.get("基金代码", code),
         "基金名称": purchase_fund["基金简称"],
