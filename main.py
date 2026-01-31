@@ -496,8 +496,8 @@ def is_trading_time() -> bool:
 
 
 async def background_refresh():
-    """后台定时刷新任务，交易时间内每2分钟刷新一次关注的基金数据"""
-    REFRESH_INTERVAL = 120  # 2分钟刷新一次
+    """后台定时刷新任务，交易时间内每30分钟刷新一次关注的基金数据"""
+    REFRESH_INTERVAL = 1800  # 30分钟刷新一次
     await asyncio.sleep(30)  # 启动后等待30秒
     logging.info("Background refresh task started")
 
