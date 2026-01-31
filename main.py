@@ -21,16 +21,11 @@ import logging
 
 from data import (
     CACHE_PERIOD_DAY_1,
-    get_fund_hold_bond,
-    get_fund_hold_stack,
     get_fund_info,
-    get_fund_info_xq,
-    get_fund_rate,
     get_index,
     get_index_new,
     get_rt_evaluation,
     get_rt_factor,
-    get_fund_share_cache,
 )
 
 
@@ -495,19 +490,8 @@ async def daily_refresh():
             async def update_one(code: str):
                 async with sem:
                     try:
-                        future_basic = get_fund_info_xq(code=code, _cache_refresh=True)
-                        future_rate = get_fund_rate(code)
-                        future_hold_stock = get_fund_hold_stack(code)
-                        future_hold_bond = get_fund_hold_bond(code)
-                        future_share = get_fund_share_cache(code)
-
-                        await asyncio.gather(
-                            future_basic,
-                            future_rate,
-                            future_hold_stock,
-                            future_hold_bond,
-                            future_share,
-                        )
+                        # Use get_fund_info with _cache_refresh=True to refresh all sub-caches
+                        await get_fund_info(code=code, _cache_refresh=True)
                         logging.info(f"pre-reload success for fund {code}")
                     except Exception as e:
                         logging.error(f"pre-reload failed for fund {code}: {e}")
