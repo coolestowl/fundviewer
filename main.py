@@ -569,8 +569,13 @@ def init_state():
 
 async def init_redis():
     """初始化 Redis 缓存连接"""
+    logging.info(f"Redis URL config: '{settings.redis_url}'")
     if settings.redis_url:
-        await RedisCache.init(settings.redis_url)
+        success = await RedisCache.init(settings.redis_url)
+        if success:
+            logging.info("Redis cache initialized successfully")
+        else:
+            logging.warning("Redis cache init failed, falling back to in-memory cache")
     else:
         logging.info("Redis URL not configured, using in-memory cache")
 

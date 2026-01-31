@@ -89,13 +89,14 @@ class AsyncRedisTTL:
         self.concurrent_lock = concurrent_lock
         self.key_prefix = key_prefix
 
-        # Fallback to in-memory cache
-        self._memory_cache = AsyncRefreshTTL(
+        # Fallback decorator instance
+        self._memory_cache_decorator = AsyncRefreshTTL(
             time_to_live=time_to_live,
             maxsize=maxsize,
             skip_args=skip_args,
             concurrent_lock=concurrent_lock
         )
+        self._memory_cache_wrapper = None  # Will be set in __call__
 
         if concurrent_lock is not None and concurrent_lock > 0:
             self._sem = asyncio.Semaphore(concurrent_lock)
@@ -116,13 +117,16 @@ class AsyncRedisTTL:
         return ":".join(key_parts)
 
     def __call__(self, func: Callable):
+        # Create memory cache wrapper once
+        self._memory_cache_wrapper = self._memory_cache_decorator(func)
+
         async def wrapper(*args, **kwargs):
             cache_refresh = kwargs.pop('_cache_refresh', False)
             client = RedisCache.get_client()
 
             # Fallback to memory cache if Redis not available
             if client is None:
-                return await self._memory_cache(func)(*args, **kwargs, _cache_refresh=cache_refresh)
+                return await self._memory_cache_wrapper(*args, **kwargs, _cache_refresh=cache_refresh)
 
             cache_key = self._make_key(func.__name__, args[self.skip_args:], kwargs)
 
@@ -131,7 +135,9 @@ class AsyncRedisTTL:
                     try:
                         cached = await client.get(cache_key)
                         if cached is not None:
+                            logging.debug(f"Redis cache HIT: {cache_key}")
                             return pickle.loads(cached)
+                        logging.debug(f"Redis cache MISS: {cache_key}")
                     except Exception as e:
                         logging.warning(f"Redis get error: {e}")
 
@@ -144,6 +150,7 @@ class AsyncRedisTTL:
                         self.time_to_live,
                         pickle.dumps(result)
                     )
+                    logging.debug(f"Redis cache SET: {cache_key} (TTL={self.time_to_live}s)")
                 except Exception as e:
                     logging.warning(f"Redis set error: {e}")
 
