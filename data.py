@@ -113,7 +113,7 @@ async def get_fund_rate(code: str, _cache_refresh: bool = False):
     selected_fund = fund_ratio[fund_ratio.代码 == code]
     
     # Check if the fund was found in the rating database
-    if len(selected_fund) == 0:
+    if selected_fund.empty:
         logging.warning(f"Fund {code} not found in rating database")
         return {}
     
@@ -286,14 +286,14 @@ async def get_fund_info_fallback(code: str, _cache_refresh: bool = False):
 
     # Check if the fund was found in purchase database
     purchase_fund_df = purchase_ret[purchase_ret["基金代码"] == code]
-    if len(purchase_fund_df) == 0:
+    if purchase_fund_df.empty:
         logging.error(f"Fund {code} not found in purchase database")
         raise ValueError(f"Fund {code} not found in purchase database")
     purchase_fund = purchase_fund_df.iloc[0]
     
     # Check if the fund was found in rate database
     rate_fund_df = rate_ret[rate_ret["基金代码"] == code]
-    if len(rate_fund_df) == 0:
+    if rate_fund_df.empty:
         logging.error(f"Fund {code} not found in rate database")
         raise ValueError(f"Fund {code} not found in rate database")
     rate_fund = rate_fund_df.iloc[0]
