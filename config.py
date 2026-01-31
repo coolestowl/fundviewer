@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     # Rate limiting settings to prevent being blocked by API providers
     max_concurrent_requests: int = 3  # Maximum number of concurrent requests to external APIs
     request_delay_ms: int = 100  # Delay in milliseconds between request batches
+    # Redis cache settings (leave empty to use in-memory cache)
+    redis_url: str = ""  # e.g., "redis://localhost:6379/0"
 
 
 settings = Settings()

@@ -18,6 +18,7 @@ from jinja2 import pass_context
 import uvicorn
 from config import settings
 import logging
+from redis_cache import RedisCache
 
 from data import (
     CACHE_PERIOD_DAY_1,
@@ -566,6 +567,14 @@ def init_state():
             sys.exit(1)
 
 
+async def init_redis():
+    """初始化 Redis 缓存连接"""
+    if settings.redis_url:
+        await RedisCache.init(settings.redis_url)
+    else:
+        logging.info("Redis URL not configured, using in-memory cache")
+
+
 if __name__ == "__main__":
 
     def exit_handler(sig, frame):
@@ -597,6 +606,9 @@ if __name__ == "__main__":
         forwarded_allow_ips="*",
     )
     server = uvicorn.Server(config=config)
+
+    # Initialize Redis cache
+    loop.run_until_complete(init_redis())
 
     srv_f = server.serve()
     update_f = daily_refresh()

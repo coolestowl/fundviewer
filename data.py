@@ -4,8 +4,7 @@ import traceback
 from typing import Dict
 
 import pandas as pd
-from cache import AsyncTTL
-from arcache import AsyncRefreshTTL
+from redis_cache import AsyncRedisTTL
 import aakshare as aak
 import logging
 
@@ -18,7 +17,7 @@ CACHE_PERIOD_DAY_15 = 86400 * 15
 night_cache = {}
 
 
-@AsyncTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1)
 async def get_index():
     """获取最新的指数信息（交易时间更新）"""
     now = datetime.datetime.now()
@@ -53,7 +52,7 @@ async def get_index():
     return now, tmp_index
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1, concurrent_lock=1)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1, concurrent_lock=1)
 async def get_index_new():
     """获取最新的指数信息（交易时间更新，使用东方财富版本）"""
     now = datetime.datetime.now()
@@ -97,7 +96,7 @@ async def get_index_new():
     return now, tmp_index
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1, concurrent_lock=1)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1, concurrent_lock=1)
 async def get_fund_rate_all(_cache_refresh: bool = False):
     """获得基金的评级信息"""
     logging.info(f"getting fund rate all")
@@ -105,7 +104,7 @@ async def get_fund_rate_all(_cache_refresh: bool = False):
     return fund_ratio
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
 async def get_fund_rate(code: str, _cache_refresh: bool = False):
     """获得基金的评级信息"""
     logging.info(f"getting fund rate for code {code}")
@@ -130,7 +129,7 @@ async def get_fund_rate(code: str, _cache_refresh: bool = False):
     return ret
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
 async def get_fund_hold_stack(code: str, _cache_refresh: bool = False):
     """获得基金的持仓股票信息"""
     logging.info(f"getting fund hold stack for {code}")
@@ -178,7 +177,7 @@ async def get_fund_hold_stack(code: str, _cache_refresh: bool = False):
     return result
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
 async def get_fund_hold_bond(code: str, _cache_refresh: bool = False):
     """获得基金的持仓债券信息"""
     logging.info(f"getting fund hold bond for {code}")
@@ -225,7 +224,7 @@ async def get_fund_hold_bond(code: str, _cache_refresh: bool = False):
     return result
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1, concurrent_lock=1)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1, concurrent_lock=1)
 async def get_fund_unit_price() -> Dict[str, float]:
     """获取基金的最新单位净值信息（每天3点以后开始更新）"""
     logging.info(f"getting fund unit price")
@@ -270,14 +269,14 @@ async def get_fund_unit_price() -> Dict[str, float]:
     return unit_price_dict
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_15, maxsize=1024)
 async def get_fund_share_cache(code: str, _cache_refresh: bool = False):
     """获取基金的持有股票和债券占比信息（15天更新）"""
     ret = await aak.get_fund_share(code)
     return ret
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
 async def get_fund_info_fallback(code: str, _cache_refresh: bool = False):
     """获取基金的基本信息（来源东方财富，每天更新）"""
     future_purchase = aak.fund_purchase_em()
@@ -328,7 +327,7 @@ async def get_fund_info_fallback(code: str, _cache_refresh: bool = False):
     return ret
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_DAY_1, maxsize=1024)
 async def get_fund_info_xq(code: str, _cache_refresh: bool = False):
     """获取基金的基本信息（来源雪球网，每天更新）"""
     try:
@@ -338,7 +337,7 @@ async def get_fund_info_xq(code: str, _cache_refresh: bool = False):
         return await get_fund_info_fallback(code=code, _cache_refresh=_cache_refresh)
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_HOUR_1, maxsize=1024)
 async def get_fund_info(code: str, _cache_refresh: bool = False):
     """汇总获得完整的基金信息"""
     logging.info(f"getting fund info for {code}")
@@ -400,7 +399,7 @@ async def get_fund_info(code: str, _cache_refresh: bool = False):
     return basic_ret
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1, concurrent_lock=1)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1, concurrent_lock=1)
 async def get_rt_factor():
     """获得实时的股票、债券信息（交易时间更新）"""
     now = datetime.datetime.now()
@@ -499,7 +498,7 @@ async def get_rt_factor():
     return now, a_stocks, h_stocks, m_stocks, bond_index
 
 
-@AsyncRefreshTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1024)
+@AsyncRedisTTL(time_to_live=CACHE_PERIOD_MIN_3, maxsize=1024)
 async def get_rt_evaluation(code: str, _cache_refresh: bool = False):
     """计算基金的实时估值"""
     fund_info_future = get_fund_info(code, _cache_refresh=_cache_refresh)
