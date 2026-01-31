@@ -229,19 +229,24 @@ async def homepage(
 
         favour_list = app.state.favour[username]
 
-        sem = asyncio.Semaphore(5)
+        sem = asyncio.Semaphore(settings.max_concurrent_requests)
+        delay_seconds = settings.request_delay_ms / 1000.0
 
         async def get_fund_evaluate(code):
+            fund_info = None
             async with sem:
                 try:
                     now, fund_info, evaluate, _ = await get_rt_evaluation(code=code)
+                    fund_info["基金估值"] = evaluate
+                    fund_info["估值时间"] = now.strftime("%H:%M:%S")
                 except Exception as e:
                     traceback.print_exc()
                     logging.error(f"get fund evaluation error: {e}")
-                    return None
-                fund_info["基金估值"] = evaluate
-                fund_info["估值时间"] = now.strftime("%H:%M:%S")
-                return fund_info
+                    fund_info = None
+            # Add delay outside semaphore to avoid rate limiting while allowing other requests to proceed
+            if delay_seconds > 0:
+                await asyncio.sleep(delay_seconds)
+            return fund_info
 
         tasks = [get_fund_evaluate(code) for code in favour_list]
         favour_funds_info_list = await asyncio.gather(*tasks)
@@ -485,7 +490,8 @@ async def daily_refresh():
                     if code not in fund_list:
                         fund_list.append(code)
 
-            sem = asyncio.Semaphore(5)
+            sem = asyncio.Semaphore(settings.max_concurrent_requests)
+            delay_seconds = settings.request_delay_ms / 1000.0
 
             async def update_one(code: str):
                 async with sem:
@@ -495,6 +501,9 @@ async def daily_refresh():
                         logging.info(f"pre-reload success for fund {code}")
                     except Exception as e:
                         logging.error(f"pre-reload failed for fund {code}: {e}")
+                # Add delay outside semaphore to avoid rate limiting while allowing other requests to proceed
+                if delay_seconds > 0:
+                    await asyncio.sleep(delay_seconds)
 
             tasks = [update_one(code) for code in fund_list]
             await asyncio.gather(*tasks)
